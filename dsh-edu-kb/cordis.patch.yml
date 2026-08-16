@@ -1,0 +1,5 @@
+- insert:
+    - id: edu-kb
+      name: dsh-edu-kb
+      config:
+        root: D:/dsh-kb

@@ -1,0 +1,11 @@
+# Sidecar venv
+sidecar/.venv/
+sidecar/__pycache__/
+sidecar/*.pyc
+
+# WeChat keys must never land in this repo. Real files live on D:\dsh-workbench\messenger\
+wx-keys.json
+wx-keys.json.tmp
+wx-keys.json.*
+wx-cache/
+*.wxkey

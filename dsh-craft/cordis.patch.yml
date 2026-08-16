@@ -1,0 +1,8 @@
+- insert:
+    - id: craft
+      name: dsh-craft
+      config:
+        root: D:/dsh-workbench/craft
+        messengerRoot: D:/dsh-workbench/messenger
+        docsRoot: D:/dsh-workbench/docs
+        kbRoot: D:/dsh-kb

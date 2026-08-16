@@ -1,0 +1,8 @@
+- insert:
+    - id: dashboard
+      name: dsh-dashboard
+      config:
+        dcRoot: D:/dsh-datacenter
+        docsRoot: D:/dsh-workbench/docs
+        kbRoot: D:/dsh-kb
+        schoolPath: D:/dsh-workbench/school.json

@@ -1,0 +1,7 @@
+- insert:
+    - id: messenger
+      name: dsh-messenger
+      config:
+        root: D:/dsh-workbench/messenger
+        cwd: D:/dsh-workbench
+        contact: 黄山

@@ -1,0 +1,7 @@
+- insert:
+    - id: cursor-llm
+      name: dsh-cursor-llm
+      config:
+        apiKeyEnv: CURSOR_API_KEY
+        model: grok-4.6
+        provider: cursor

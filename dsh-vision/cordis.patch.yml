@@ -1,0 +1,8 @@
+- insert:
+    - id: vision
+      name: dsh-vision
+      config:
+        apiKeyEnv: VISION_API_KEY
+        cursorApiKeyEnv: CURSOR_API_KEY
+        cursorModel: composer-2.5
+        scratch: D:/dsh-workbench/vision-scratch
