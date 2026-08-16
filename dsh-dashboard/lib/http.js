@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { createLive, loadFresh } from "../../dsh-work-ui/live.js"
+import { registerWorkUi } from "../../dsh-work-ui/http.js"
 import { dashboardState } from "./state.js"
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -29,6 +30,7 @@ export function registerWall(webServer, config) {
 		path: "/plugins/dsh-dashboard/live",
 	})
 	stops.push(live.register(webServer))
+	stops.push(registerWorkUi(webServer))
 	stops.push(webServer.register({
 		kind: "exact",
 		path: "/plugins/dsh-dashboard/wall",

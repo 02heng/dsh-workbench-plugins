@@ -59,17 +59,11 @@ window.__ModuleLoader__.load({
 			".dsh-vue-head:hover{background:#d8ebe6;transform:translateY(-1px);}",
 			".dsh-vue-head:active{transform:scale(.98);}",
 			".dsh-vue-head:focus-visible{outline:2px solid #0f5c56;outline-offset:2px;}",
-			"#dsh-atelier-frame{",
+			"#dsh-work-frame{",
 			"position:fixed;z-index:28;border:0;background:#f4efe6;display:none;",
 			"width:0;height:0;right:auto;bottom:auto;",
 			"}",
-			"html[data-atelier] #dsh-atelier-frame{display:block;}",
-			"html[data-atelier] [class*='viewArea']>*,html[data-atelier] [class*='ViewArea']>*{",
-			"visibility:hidden!important;",
-			"}",
-			"html:not([data-atelier]) [class*='viewArea']>*,html:not([data-atelier]) [class*='ViewArea']>*{",
-			"visibility:visible;",
-			"}",
+			"html[data-workbench] #dsh-work-frame{display:block;}",
 			"html.dsh-paper [class*='viewArea']{flex:1;min-height:0;}",
 			"html.dsh-paper [class*='viewArea']>.dsh-wall-frame,html.dsh-paper [class*='viewArea']>div{",
 			"flex:1 1 auto;min-height:72vh;height:100%;",
@@ -152,11 +146,32 @@ window.__ModuleLoader__.load({
 			};
 		}
 
+		function workHash(name) {
+			var label = cleanName(name);
+			var map = {
+				"信使": "#/desk",
+				"知识库": "#/inbox",
+				"循环任务": "#/board",
+				"数据大屏": "#/wall",
+				"书籍转技能": "#/atelier/book",
+				"轨迹": "#/atelier/trail",
+				"记忆": "#/atelier/memory",
+				"技能": "#/atelier/skills",
+				"待办": "#/atelier/todos",
+			};
+			if (map[label]) return map[label];
+			var keys = Object.keys(map);
+			for (var i = 0; i < keys.length; i++) {
+				if (label.indexOf(keys[i]) === 0) return map[keys[i]];
+			}
+			return "";
+		}
+
 		function frameEl() {
-			var frame = document.getElementById("dsh-atelier-frame");
+			var frame = document.getElementById("dsh-work-frame");
 			if (frame) return frame;
 			frame = document.createElement("iframe");
-			frame.id = "dsh-atelier-frame";
+			frame.id = "dsh-work-frame";
 			frame.title = "工作台账";
 			frame.setAttribute("width", "1");
 			frame.setAttribute("height", "1");
@@ -165,8 +180,9 @@ window.__ModuleLoader__.load({
 		}
 
 		function placeFrame() {
-			var frame = document.getElementById("dsh-atelier-frame");
-			if (!frame || !document.documentElement.getAttribute("data-atelier")) return;
+			var frame = document.getElementById("dsh-work-frame");
+			if (!frame || !document.documentElement.getAttribute("data-workbench")) return;
+			frame.style.display = "block";
 			var view = document.querySelector("[class*='viewArea']");
 			var header = document.querySelector("header:has([role='tablist'])") || document.querySelector("header");
 			var rail = document.querySelector("[class*='sidebarCol'], [class*='SidebarCol'], [class*='workspaceList'], [class*='WorkspaceList'], aside");
@@ -207,44 +223,43 @@ window.__ModuleLoader__.load({
 			return window.__dshSessionId || "";
 		}
 
-		async function showAtelier(page) {
+		function showWork(hash) {
 			ensureCss();
 			var ticket = ++showGen;
 			var frame = frameEl();
-			var sid = await resolveSessionId();
 			if (ticket !== showGen) return;
-			var next = "/plugins/dsh-dashboard/atelier?page=" + encodeURIComponent(page)
-				+ (sid ? "&session=" + encodeURIComponent(sid) : "")
-				+ "#/" + page;
-			if (frame.dataset.page !== page || frame.dataset.session !== sid) {
-				frame.src = next;
-				frame.dataset.page = page;
-				frame.dataset.session = sid || "";
+			var app = "/plugins/dsh-work-ui/app" + hash;
+			if (!frame.dataset.ready) {
+				frame.src = app;
+				frame.dataset.ready = "1";
+			} else if (frame.dataset.hash !== hash) {
+				try {
+					if (frame.contentWindow) frame.contentWindow.location.hash = hash;
+				} catch (_error) {
+					frame.src = app;
+				}
 			}
-			document.documentElement.setAttribute("data-atelier", page);
+			frame.dataset.hash = hash;
+			document.documentElement.setAttribute("data-workbench", hash);
 			setDrawer(false);
 			placeFrame();
 		}
 
-		function hideAtelier() {
+		function hideWork() {
 			showGen += 1;
-			document.documentElement.removeAttribute("data-atelier");
+			document.documentElement.removeAttribute("data-workbench");
 			setDrawer(false);
-			var frame = document.getElementById("dsh-atelier-frame");
+			var frame = document.getElementById("dsh-work-frame");
 			if (!frame) return;
-			frame.src = "about:blank";
-			frame.dataset.page = "";
-			frame.dataset.session = "";
+			frame.style.display = "none";
 			frame.style.width = "0";
 			frame.style.height = "0";
-			frame.style.top = "0";
-			frame.style.left = "0";
 		}
 
 		function onTab(name) {
-			var page = atelierKey(name);
-			if (page) showAtelier(page);
-			else hideAtelier();
+			var hash = workHash(name);
+			if (hash) showWork(hash);
+			else hideWork();
 		}
 
 		function bootAtelier() {
@@ -309,17 +324,7 @@ window.__ModuleLoader__.load({
 		}
 
 		function DataWallPanel() {
-			react.useEffect(function () {
-				ensureCss();
-				setDrawer(true);
-			}, []);
-			return react.createElement("div", { className: "dsh-wall-frame" },
-				react.createElement("iframe", {
-					src: "/plugins/dsh-dashboard/wall",
-					title: "数据大屏",
-					loading: "lazy",
-				})
-			);
+			return react.createElement("div", { className: "dsh-work-slot", "aria-hidden": "true" });
 		}
 
 		var inject = ["slots"];

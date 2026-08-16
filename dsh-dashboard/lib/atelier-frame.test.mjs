@@ -54,14 +54,20 @@ const fresh = beginAtelierShow()
 if (!isAtelierShowCurrent(fresh)) fail("latest atelier show stays current")
 
 const client = readFileSync(new URL("./client.js", import.meta.url), "utf8")
-if (!client.includes("about:blank") || !client.includes("dataset.page")) {
-	fail("dashboard client must unload atelier iframe when leaving the tab")
+if (client.includes("dsh-atelier-frame") || client.includes("data-atelier")) {
+	fail("dashboard client must not keep the old atelier overlay")
 }
-if (!client.includes("atelierShow") && !client.includes("beginAtelierShow") && !client.includes("showGen")) {
-	fail("dashboard client must drop in-flight atelier show when opening 信使")
+if (!client.includes("dsh-work-frame") || !client.includes("/plugins/dsh-work-ui/app")) {
+	fail("dashboard client must keep one work-frame on the React shell")
 }
-if (/function showAtelier[\s\S]*?function hideAtelier/.test(client) && /function showAtelier[\s\S]*?setDrawer\(true\)[\s\S]*?function hideAtelier/.test(client)) {
-	fail("opening atelier must not fold the chat composer")
+if (client.includes('frame.src = "about:blank"') || client.includes("frame.src=\"about:blank\"")) {
+	fail("leaving a paper tab must hide the work-frame, not blank it")
+}
+if (!client.includes("showGen")) {
+	fail("dashboard client must drop in-flight work-frame show when opening 对话")
+}
+if (/function showWork[\s\S]*?setDrawer\(true\)/.test(client) || /function showAtelier[\s\S]*?setDrawer\(true\)/.test(client)) {
+	fail("opening the workbench must not fold the chat composer")
 }
 const atelierSrc = readFileSync(new URL("./atelier.js", import.meta.url), "utf8")
 if (!atelierSrc.includes("paper-scroll")) {

@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url"
 
 const SHARED = "D:/dsh-plugins/dsh-work-ui"
 
-export function createLive({ dirs, path }) {
+export function createLive({ dirs, path, reload = false }) {
 	const clients = new Set()
 	let timer
 	const ping = () => {
@@ -15,10 +15,6 @@ export function createLive({ dirs, path }) {
 			}
 		}, 140)
 	}
-	const watchers = [...new Set([...dirs, SHARED])].map((dir) => {
-		try { return watch(dir, { recursive: true }, ping) } catch { return null }
-	}).filter(Boolean)
-
 	const snippet = `<div class="live-dot" id="live-dot"><i></i>Live</div>
 <script>
 (function(){
@@ -26,7 +22,7 @@ export function createLive({ dirs, path }) {
   var es=new EventSource(${JSON.stringify(path)});
   es.onopen=function(){ if(dot) dot.classList.remove("off"); };
   es.onerror=function(){ if(dot) dot.classList.add("off"); };
-  es.onmessage=function(){ location.reload(); };
+  es.onmessage=function(){ ${reload ? "location.reload();" : "if(dot) dot.classList.remove('off');"} };
 })();
 </script>`
 
@@ -38,6 +34,9 @@ export function createLive({ dirs, path }) {
 				: String(html) + snippet
 		},
 		register(webServer) {
+			const watchers = [...new Set([...dirs, SHARED])].map((dir) => {
+				try { return watch(dir, { recursive: true }, ping) } catch { return null }
+			}).filter(Boolean)
 			const stop = webServer.register({
 				kind: "exact",
 				path,
