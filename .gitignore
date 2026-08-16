@@ -1,4 +1,7 @@
 node_modules/
+.venv/
+__pycache__/
+*.pyc
 .env
 .env.*
 *.log
@@ -7,6 +10,11 @@ Thumbs.db
 outlook.json
 qq.json
 credentials.json
+wx-keys.json
+wx-keys.json.tmp
+wx-keys.json.*
+wx-cache/
+*.wxkey
 _test-*/
 coverage/
 .turbo/

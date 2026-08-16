@@ -27,7 +27,9 @@ dsh plugin --profile web add github:02heng/dsh-workbench-plugins
 
 或把本仓库放到 `D:\dsh-plugins`，在 profile 里 `link:` 各个子目录。
 
-路径默认写在 D 盘：`D:\dsh-workbench`、`D:\dsh-kb`。
+路径默认写在 D 盘：`D:\dsh-workbench`、`D:\dsh-kb`。微信密钥只放本机 `D:\dsh-workbench\messenger\`，不要进 git。
+
+台账前端收成 Vue 单页的计划见 `docs/superpowers/plans/2026-08-16-vue-workbench.md`。
 
 ## 本机还在用、但已有上游仓库的插件
 
