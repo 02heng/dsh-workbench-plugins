@@ -6,6 +6,7 @@ import { handleInbound, retryTask } from "./dispatch.js"
 import { draftBody } from "./draft.js"
 import { createMail } from "./mail.js"
 import { ackOut, takeOutbox } from "./outbox.js"
+import { loadReplyCatalog, replySelection, selectedLabel } from "./reply-model.js"
 import { createStore } from "./store.js"
 import { SIDECAR_DIR, SIDECAR_PYTHON } from "./sidecar.js"
 import { clearKeyFiles, launchCollect, readKeysStatus } from "./wx-keys.js"
@@ -119,6 +120,8 @@ async function deskState(store, mail, opts = {}) {
 			}
 		}
 	}
+	const models = await loadReplyCatalog(opts.api, typeof opts.llm === "function" ? opts.llm() : opts.llm)
+	const picked = replySelection(config)
 	return {
 		listen: Boolean(config.listen),
 		listenError: config.listenError || "",
@@ -126,12 +129,19 @@ async function deskState(store, mail, opts = {}) {
 		mailbox: snap.loggedIn ? (snap.mailbox || "") : "",
 		contact: config.contact ?? "黄山",
 		password: config.password ?? "任务:",
+		lines: config.lines ?? [],
+		activeLineId: config.activeLineId ?? "",
 		items: await store.purgeStaleItems().then(() => store.listItems()),
 		mail: letters,
 		mailConfigured: snap.configured,
 		mailLoggedIn: snap.loggedIn,
 		mailPending: snap.pending,
 		mailError: listError || snap.error || (snap.configured ? "" : "未配置 QQ 邮箱"),
+		models,
+		replyProvider: config.replyProvider || "",
+		replyModel: config.replyModel || "",
+		replyEffort: config.replyEffort || "",
+		replyLabel: config.replyLabel || selectedLabel(models, picked, "工作台当前模型"),
 	}
 }
 
@@ -140,6 +150,10 @@ function publicState(state) {
 		listen: state.listen,
 		listenError: state.listenError || "",
 		keysStatus: state.keysStatus || "missing",
+		contact: state.contact,
+		password: state.password,
+		lines: state.lines || [],
+		activeLineId: state.activeLineId || "",
 		mailbox: state.mailbox,
 		items: state.items,
 		mail: state.mail,
@@ -147,6 +161,11 @@ function publicState(state) {
 		mailLoggedIn: state.mailLoggedIn,
 		mailPending: state.mailPending,
 		mailError: state.mailError,
+		models: state.models || [],
+		replyProvider: state.replyProvider || "",
+		replyModel: state.replyModel || "",
+		replyEffort: state.replyEffort || "",
+		replyLabel: state.replyLabel || "工作台当前模型",
 	}
 }
 
@@ -171,7 +190,7 @@ export function registerDesk(webServer, config = {}, api) {
 		handler: async (_req, res) => {
 			try {
 				const { deskHtml } = await loadFresh(new URL("./desk.js", import.meta.url).href)
-				const html = live.withLive(deskHtml(await deskState(store, mail, { skipInbox: true })))
+				const html = live.withLive(deskHtml(await deskState(store, mail, { skipInbox: true, api, llm: config.getLlm })))
 				res.writeHead(200, {
 					"content-type": "text/html; charset=utf-8",
 					"cache-control": "no-store",
@@ -187,7 +206,7 @@ export function registerDesk(webServer, config = {}, api) {
 		kind: "exact",
 		path: "/plugins/dsh-messenger/state",
 		handler: async (_req, res) => {
-			try { json(res, 200, publicState(await deskState(store, mail))) }
+			try { json(res, 200, publicState(await deskState(store, mail, { api, llm: config.getLlm }))) }
 			catch (error) { json(res, 500, { error: String(error?.message ?? error) }) }
 		},
 	}))
@@ -202,7 +221,7 @@ export function registerDesk(webServer, config = {}, api) {
 				json(res, 200, result)
 			} catch (error) {
 				const message = String(error?.message ?? error)
-				if (message.includes("只收黄山")) return json(res, 403, { error: message })
+				if (message.includes("未登记的联系人") || message.includes("只收黄山")) return json(res, 403, { error: message })
 				json(res, 400, { error: message })
 			}
 		},
@@ -264,6 +283,31 @@ export function registerDesk(webServer, config = {}, api) {
 					? { listen: true, listenError: undefined }
 					: { listen: false, listenError: undefined })
 				json(res, 200, { on, running: Boolean(sidecar?.running?.()) })
+			} catch (error) {
+				json(res, 400, { error: String(error?.message ?? error) })
+			}
+		},
+	}))
+	stops.push(webServer.register({
+		kind: "exact",
+		path: "/plugins/dsh-messenger/wx/model",
+		handler: async (req, res) => {
+			try {
+				if ((req.method ?? "GET") !== "POST") return json(res, 405, { error: "POST only" })
+				if (!sameOrigin(req)) return json(res, 403, { error: "same origin only" })
+				const body = await readBody(req)
+				const provider = String(body.provider ?? "").trim()
+				const model = String(body.model ?? "").trim()
+				if (!provider || !model) return json(res, 400, { error: "请选择模型" })
+				const effort = String(body.effort ?? "").trim()
+				const label = String(body.label ?? "").trim()
+				await store.saveConfig({
+					replyProvider: provider,
+					replyModel: model,
+					replyEffort: effort,
+					replyLabel: label || `${provider}/${model}`,
+				})
+				json(res, 200, { ok: true, provider, model, effort, label })
 			} catch (error) {
 				json(res, 400, { error: String(error?.message ?? error) })
 			}
@@ -414,6 +458,73 @@ export function registerDesk(webServer, config = {}, api) {
 				if (!sameOrigin(req)) return json(res, 403, { error: "same origin only" })
 				lastKnownMail = []
 				json(res, 200, await mail.logout())
+			} catch (error) {
+				json(res, 400, { error: String(error?.message ?? error) })
+			}
+		},
+	}))
+	stops.push(webServer.register({
+		kind: "exact",
+		path: "/plugins/dsh-messenger/line/save",
+		handler: async (req, res) => {
+			try {
+				if ((req.method ?? "GET") !== "POST") return json(res, 405, { error: "POST only" })
+				if (!sameOrigin(req)) return json(res, 403, { error: "same origin only" })
+				json(res, 200, await store.upsertLine(await readBody(req)))
+			} catch (error) {
+				json(res, 400, { error: String(error?.message ?? error) })
+			}
+		},
+	}))
+	stops.push(webServer.register({
+		kind: "exact",
+		path: "/plugins/dsh-messenger/line/select",
+		handler: async (req, res) => {
+			try {
+				if ((req.method ?? "GET") !== "POST") return json(res, 405, { error: "POST only" })
+				if (!sameOrigin(req)) return json(res, 403, { error: "same origin only" })
+				json(res, 200, await store.selectLine(String((await readBody(req)).id ?? "").trim()))
+			} catch (error) {
+				json(res, 400, { error: String(error?.message ?? error) })
+			}
+		},
+	}))
+	stops.push(webServer.register({
+		kind: "exact",
+		path: "/plugins/dsh-messenger/line/delete",
+		handler: async (req, res) => {
+			try {
+				if ((req.method ?? "GET") !== "POST") return json(res, 405, { error: "POST only" })
+				if (!sameOrigin(req)) return json(res, 403, { error: "same origin only" })
+				json(res, 200, await store.deleteLine(String((await readBody(req)).id ?? "").trim()))
+			} catch (error) {
+				json(res, 400, { error: String(error?.message ?? error) })
+			}
+		},
+	}))
+	stops.push(webServer.register({
+		kind: "exact",
+		path: "/plugins/dsh-messenger/password/save",
+		handler: async (req, res) => {
+			try {
+				if ((req.method ?? "GET") !== "POST") return json(res, 405, { error: "POST only" })
+				if (!sameOrigin(req)) return json(res, 403, { error: "same origin only" })
+				const body = await readBody(req)
+				json(res, 200, await store.upsertPassword(String(body.lineId ?? "").trim(), body))
+			} catch (error) {
+				json(res, 400, { error: String(error?.message ?? error) })
+			}
+		},
+	}))
+	stops.push(webServer.register({
+		kind: "exact",
+		path: "/plugins/dsh-messenger/password/delete",
+		handler: async (req, res) => {
+			try {
+				if ((req.method ?? "GET") !== "POST") return json(res, 405, { error: "POST only" })
+				if (!sameOrigin(req)) return json(res, 403, { error: "same origin only" })
+				const body = await readBody(req)
+				json(res, 200, await store.deletePassword(String(body.lineId ?? "").trim(), String(body.id ?? "").trim()))
 			} catch (error) {
 				json(res, 400, { error: String(error?.message ?? error) })
 			}

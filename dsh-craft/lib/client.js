@@ -6,80 +6,35 @@ window.__ModuleLoader__.load({
 		var react = require("react");
 
 		var MODES = [
-			{ id: "ask", label: "问" },
-			{ id: "plan", label: "想" },
-			{ id: "craft", label: "做" },
+			{ id: "ask", label: "问一问", hint: "只答，不改文件、不发微信" },
+			{ id: "plan", label: "想一想", hint: "先出做法，点选后才写" },
+			{ id: "craft", label: "做一做", hint: "可以写文件、发微信" },
 		];
-		var EXPERTS = [
-			{ id: "official", label: "公文" },
-			{ id: "thesis", label: "课题" },
-			{ id: "duty", label: "值班" },
-		];
+		function shouldShowCraftDock(tabName) {
+			var label = String(tabName || "").replace(/[×✕]/g, "").replace(/\(\d+\)/g, "").replace(/\s+/g, " ").trim();
+			if (!label || label === "对话" || label.indexOf("对话") === 0) return true;
+			var hide = ["记忆", "技能", "待办", "轨迹", "书籍转技能", "派活台", "数据大屏", "信使", "上下文"];
+			for (var i = 0; i < hide.length; i++) {
+				if (label === hide[i] || label.indexOf(hide[i]) === 0) return false;
+			}
+			return true;
+		}
+		void shouldShowCraftDock;
+		void MODES;
 
-		var css = [
-			".dsh-craft-dock{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:0 2px 6px;}",
-			".dsh-craft-chip{",
-			"appearance:none;border:1px solid #d8cfc0;background:#fffdf8;color:#0f5c56;",
-			"border-radius:999px;padding:5px 12px;cursor:pointer;",
-			"font:500 12px/1.2 'IBM Plex Sans','Noto Sans SC',sans-serif;",
-			"transition:transform .14s ease,background .14s ease;",
-			"}",
-			".dsh-craft-chip:hover{background:#d8ebe6;transform:translateY(-1px);}",
-			".dsh-craft-chip:active{transform:scale(.98);}",
-			".dsh-craft-chip:focus-visible{outline:2px solid #0f5c56;outline-offset:2px;}",
-			".dsh-craft-chip.is-on{background:#0f5c56;color:#f7fffc;border-color:#0f5c56;}",
-			".dsh-craft-sep{width:1px;height:16px;background:#d8cfc0;margin:0 4px;}",
-		].join("");
-
-		function ensureCss() {
-			if (document.getElementById("dsh-craft-dock-css")) return;
-			var style = document.createElement("style");
-			style.id = "dsh-craft-dock-css";
-			style.textContent = css;
-			document.head.appendChild(style);
+		function mountCraftDock() {
+			if (document.getElementById("dsh-craft-chips-src")) return;
+			var script = document.createElement("script");
+			script.id = "dsh-craft-chips-src";
+			script.src = "/plugins/dsh-dashboard/craft-chips.js?v=20261008b";
+			document.head.appendChild(script);
+			window.addEventListener("dsh-tab-change", function () {
+				if (window.__dshPlaceCraftDock) window.__dshPlaceCraftDock();
+			});
 		}
 
 		function CraftDock() {
-			var state = react.useState({ mode: "craft", expert: "none" });
-			var snap = state[0];
-			var setSnap = state[1];
-			react.useEffect(function () {
-				ensureCss();
-				fetch("/plugins/dsh-craft/api/state").then(function (res) { return res.json(); }).then(function (data) {
-					if (data && data.mode) setSnap({ mode: data.mode, expert: data.expert || "none" });
-				}).catch(function () {});
-			}, []);
-			function post(path, body) {
-				return fetch(path, {
-					method: "POST",
-					headers: { "content-type": "application/json" },
-					body: JSON.stringify(body),
-				}).then(function (res) { return res.json(); }).then(function (data) {
-					if (data.error) throw new Error(data.error);
-					setSnap({ mode: data.mode || snap.mode, expert: data.expert || snap.expert });
-				});
-			}
-			return react.createElement("div", { className: "dsh-craft-dock", "aria-label": "问想做" },
-				MODES.map(function (item) {
-					return react.createElement("button", {
-						key: item.id,
-						type: "button",
-						className: "dsh-craft-chip" + (snap.mode === item.id ? " is-on" : ""),
-						onClick: function () { post("/plugins/dsh-craft/api/mode", { mode: item.id }); },
-					}, item.label);
-				}),
-				react.createElement("span", { className: "dsh-craft-sep", "aria-hidden": "true" }),
-				EXPERTS.map(function (item) {
-					return react.createElement("button", {
-						key: item.id,
-						type: "button",
-						className: "dsh-craft-chip" + (snap.expert === item.id ? " is-on" : ""),
-						onClick: function () {
-							post("/plugins/dsh-craft/api/expert", { expert: snap.expert === item.id ? "none" : item.id });
-						},
-					}, item.label);
-				})
-			);
+			return null;
 		}
 
 		function CraftDeskPanel() {
@@ -104,11 +59,21 @@ window.__ModuleLoader__.load({
 
 		var inject = ["slots"];
 		function apply(ctx) {
-			ctx.slots.inject("conversation.input.dock", function () {
+			mountCraftDock();
+			ctx.slots.inject("conversation.input.left", function () {
 				return ctx.slots.register({
-					name: "conversation.input.dock",
+					name: "conversation.input.left",
 					id: "craft-mode",
-					order: 12,
+					order: 20,
+					label: function () { return "问想做"; },
+					inject: function () { return {}; },
+				}, CraftDock);
+			});
+			ctx.slots.inject("conversation.input.right", function () {
+				return ctx.slots.register({
+					name: "conversation.input.right",
+					id: "craft-mode-right",
+					order: 8,
 					label: function () { return "问想做"; },
 					inject: function () { return {}; },
 				}, CraftDock);

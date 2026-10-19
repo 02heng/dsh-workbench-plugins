@@ -1,18 +1,61 @@
-import { pathToFileURL } from "node:url"
+import { dirname, join } from "node:path"
+import { fileURLToPath, pathToFileURL } from "node:url"
 import { resolvedCursorModel } from "./model-info.js"
+import { CURSOR_TOOLS, officeCustomTools } from "./office-tools.js"
 
 const sessions = new Map()
+
+/** dsh-llm 的候选入口：随安装目录推导，不再只认 D:/deepseek harness 这个写死路径。 */
+function dshLlmCandidates() {
+	const candidates = []
+	const fromExec = typeof process.execPath === "string" ? dirname(process.execPath) : undefined
+	for (const root of [process.resourcesPath, fromExec === undefined ? undefined : join(fromExec, "resources")]) {
+		if (root === undefined || root === "") continue
+		for (const suffix of ["app.asar", "app.asar.unpacked"]) {
+			candidates.push(join(root, suffix, "dsh", "node_modules", "@deepseek-ai", "dsh-llm", "lib", "index.js"))
+		}
+	}
+	candidates.push("D:/deepseek harness/resources/app.asar/dsh/node_modules/@deepseek-ai/dsh-llm/lib/index.js")
+	return [...new Set(candidates)]
+}
 
 async function loadLlm() {
 	try {
 		return await import("@deepseek-ai/dsh-llm")
-	} catch {
-		return await import(pathToFileURL("D:/deepseek-harness/packages/llm/llm/src/index.ts").href)
+	} catch (bareError) {
+		const tried = []
+		for (const candidate of dshLlmCandidates()) {
+			tried.push(candidate)
+			try {
+				return await import(pathToFileURL(candidate).href)
+			} catch {
+				// 继续尝试下一个候选
+			}
+		}
+		throw new Error(`dsh-cursor-llm: 无法加载 @deepseek-ai/dsh-llm（裸导入失败：${String(bareError)}；已尝试：${tried.join("、")}）`)
 	}
 }
 
 async function loadSdk() {
-	return import(pathToFileURL("D:/dsh-plugins/dsh-cursor-delegate/node_modules/@cursor/sdk/dist/esm/index.js").href)
+	try {
+		return await import("@cursor/sdk")
+	} catch (bareError) {
+		const here = dirname(fileURLToPath(import.meta.url))
+		const candidates = [...new Set([
+			join(here, "..", "..", "dsh-cursor-delegate", "node_modules", "@cursor", "sdk", "dist", "esm", "index.js"),
+			"D:/dsh-plugins/dsh-cursor-delegate/node_modules/@cursor/sdk/dist/esm/index.js",
+		])]
+		const tried = []
+		for (const candidate of candidates) {
+			tried.push(candidate)
+			try {
+				return await import(pathToFileURL(candidate).href)
+			} catch {
+				// 继续尝试下一个候选
+			}
+		}
+		throw new Error(`dsh-cursor-llm: 无法加载 @cursor/sdk（裸导入失败：${String(bareError)}；已尝试：${tried.join("、")}）`)
+	}
 }
 
 async function disposeAgent(agent) {
@@ -74,13 +117,16 @@ export async function createCursorAdapter({ apiKeyEnv, model, resolveKey, Agent:
 			let agent = remembered?.agent
 			try {
 				if (!agent) {
+					const workCwd = remembered?.cwd || cwd
+					const local = { cwd: workCwd, customTools: officeCustomTools(workCwd) }
 					if (remembered?.agentId) {
-						agent = await Agent.resume(remembered.agentId, { apiKey })
+						agent = await Agent.resume(remembered.agentId, { apiKey, tools: CURSOR_TOOLS, local })
 					} else {
 						agent = await Agent.create({
 							apiKey,
 							model: { id: options.model || model },
-							local: { cwd: remembered?.cwd || cwd },
+							tools: CURSOR_TOOLS,
+							local,
 						})
 					}
 				}

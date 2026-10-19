@@ -1,5 +1,5 @@
 - insert:
-    - id: craft
+    - id: dsh-craft
       name: dsh-craft
       config:
         root: D:/dsh-workbench/craft

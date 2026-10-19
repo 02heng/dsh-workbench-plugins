@@ -128,4 +128,19 @@ check(msg_kind(999) == "other", "other kind")
 check(text_content("你好") == "你好", "plain text")
 check(text_content(b"hello") == "hello", "bytes utf8")
 
+import tempfile
+from pathlib import Path
+from weixin_inbox import STAMP, cache_stamp
+
+td = Path(tempfile.mkdtemp())
+db = td / "message_0.db"
+db.write_bytes(b"x")
+s1 = cache_stamp(db)
+check(str(s1).startswith(f"{STAMP}:"), f"stamp prefix {s1}")
+check(s1.endswith(":0"), f"no wal {s1}")
+wal = Path(str(db) + "-wal")
+wal.write_bytes(b"yy")
+s2 = cache_stamp(db)
+check(s1 != s2, "wal must bust decrypt cache")
+
 print("PASS weixin-db")

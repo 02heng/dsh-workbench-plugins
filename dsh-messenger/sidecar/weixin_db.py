@@ -11,6 +11,7 @@ MANY_CONTACT = "联系人里有多个黄山"
 DB_FAIL = "本机库读失败"
 CONTACT = os.environ.get("DSH_WX_CONTACT", "黄山")
 PASSWORD_PREFIXES = ("任务:", "任务：")
+CONFIG_PATH = os.environ.get("DSH_WX_CONFIG", r"D:\dsh-workbench\messenger\config.json")
 DATA_ROOT = os.environ.get("DSH_WX_DATA_ROOT", r"E:\weixin")
 CURSOR_PATH = os.environ.get("DSH_WX_CURSOR", r"D:\dsh-workbench\messenger\wx-cursor.json")
 CACHE_DIR = os.environ.get("DSH_WX_CACHE", r"D:\dsh-workbench\messenger\wx-cache")
@@ -36,9 +37,34 @@ def resolve_contact(rows, name=None):
     raise ContactError(NO_CONTACT)
 
 
+def password_prefixes():
+    prefixes = list(PASSWORD_PREFIXES)
+    try:
+        data = json.loads(Path(CONFIG_PATH).read_text(encoding="utf-8"))
+        for line in data.get("lines") or []:
+            for password in line.get("passwords") or []:
+                token = str(password.get("token") or "").strip()
+                if not token:
+                    continue
+                base = token.rstrip(":：")
+                if not base:
+                    continue
+                if token.endswith(":") or token.endswith("："):
+                    prefixes.extend([token, f"{base}:", f"{base}："])
+                else:
+                    prefixes.extend([token, f"{base}:", f"{base}：", base])
+    except Exception:
+        pass
+    seen = []
+    for prefix in prefixes:
+        if prefix and prefix not in seen:
+            seen.append(prefix)
+    return tuple(seen)
+
+
 def has_password(content):
     text = text_content(content).strip()
-    return any(text.startswith(prefix) for prefix in PASSWORD_PREFIXES)
+    return any(text.startswith(prefix) for prefix in password_prefixes())
 
 
 def new_messages(rows, cursor=0):

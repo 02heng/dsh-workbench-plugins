@@ -213,6 +213,10 @@ try {
 	if (html.includes("Outlook") || html.includes("OUTLOOK") || html.includes("设备码")) fail("desk leftover outlook")
 	if (!html.includes("信使")) fail("desk 信使")
 	if (!html.includes("黄山专线")) fail("desk 黄山专线")
+	if (!html.includes("专线名册") || !html.includes("口令底稿")) fail("desk line crud")
+	if (!html.includes("当前打开") || !html.includes("不会按备注名")) fail("desk send current window")
+	if (!html.includes("/plugins/dsh-messenger/line/save")) fail("desk line save")
+	if (!html.includes("/plugins/dsh-messenger/password/save")) fail("desk password save")
 	if (!html.includes("个人微信自动化有风控，PC 微信须登录")) fail("desk risk note")
 	if (!html.includes("已回图")) fail("desk replied label")
 	if (!html.includes("微信·黄山·T-0815-02")) fail("desk session title")
@@ -254,6 +258,62 @@ try {
 	if (!html.includes("lastItemsFp") || !html.includes("itemsFingerprint")) fail("desk quiet refresh")
 	if (html.includes(".slip{") && html.includes("animation:rise") && !html.includes("animation:none")) {
 		fail("desk slip should not rise every poll")
+	}
+	if (!html.includes("id=\"model-trigger\"") || !html.includes("回复模型")) fail("desk model picker")
+	if (!html.includes("/plugins/dsh-messenger/wx/model")) fail("desk model post")
+	if (!html.includes("model-menu") || !html.includes("aria-haspopup")) fail("desk model menu a11y")
+	if (!html.includes("<li") || html.includes("<p class=\"model-empty\"")) fail("desk empty model must be li not p")
+	if (!html.includes("facts-chips") || !html.includes("model-pick")) fail("desk facts row")
+	const emptyHtml = deskHtml({ listen: false, items: [], mail: [], models: [] })
+	if (emptyHtml.includes("<ul") && emptyHtml.includes("<p class=\"model-empty\"")) {
+		fail("empty catalog p inside ul would hoist")
+	}
+	const filled = deskHtml({
+		listen: false,
+		items: [],
+		mail: [],
+		models: [{ provider: "deepseek-official", model: "deepseek-v4-flash", effort: "high", label: "DeepSeek-V4-Flash High" }],
+		replyProvider: "deepseek-official",
+		replyModel: "deepseek-v4-flash",
+		replyEffort: "high",
+		replyLabel: "DeepSeek-V4-Flash High",
+	})
+	if (!filled.includes("DeepSeek-V4-Flash High")) fail("desk lists workbench model")
+	if (!filled.includes("data-act=\"model\"")) fail("desk model option")
+	if (!html.includes("heldModel") || !html.includes("pullGen") || !html.includes("lastModelsFp")) {
+		fail("desk model pick must ignore stale poll")
+	}
+	const pickSrc = html.slice(html.indexOf("async function pickModel"))
+	const labelAt = pickSrc.indexOf("model-label")
+	const postAt = pickSrc.indexOf("/plugins/dsh-messenger/wx/model")
+	if (labelAt < 0 || postAt < 0 || labelAt > postAt) fail("desk must paint pick before save")
+
+	const modelSave = res()
+	const modelRoute = find("/plugins/dsh-messenger/wx/model")
+	if (!modelRoute) fail("model route missing")
+	await modelRoute.handler(req({
+		method: "POST",
+		headers: origin,
+		body: { provider: "deepseek-official", model: "deepseek-v4-flash", effort: "high", label: "DeepSeek-V4-Flash High" },
+	}), modelSave)
+	const savedModel = parsed(modelSave)
+	if (modelSave.status !== 200 || savedModel.ok !== true) fail("model save " + modelSave.body)
+	const cfg = await store.loadConfig()
+	if (cfg.replyProvider !== "deepseek-official" || cfg.replyModel !== "deepseek-v4-flash" || cfg.replyEffort !== "high") {
+		fail("model config " + JSON.stringify(cfg))
+	}
+
+	const lineSave = res()
+	const lineRoute = find("/plugins/dsh-messenger/line/save")
+	if (!lineRoute) fail("line save route missing")
+	await lineRoute.handler(req({
+		method: "POST",
+		headers: origin,
+		body: { name: "张三" },
+	}), lineSave)
+	const savedLine = parsed(lineSave)
+	if (lineSave.status !== 200 || !savedLine.lines?.some((row) => row.name === "张三")) {
+		fail("line save " + lineSave.body)
 	}
 
 	const slowRoot = "D:/dsh-workbench/messenger/_test-http-desk-fast"

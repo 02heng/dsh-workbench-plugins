@@ -264,9 +264,29 @@ body.atelier{overflow:auto}
 .entry{
   background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:16px;
   padding:14px 16px;margin:0 0 10px;box-shadow:var(--shadow);
+  transition:border-color .16s ease, box-shadow .16s ease, background .16s ease;
 }
 .entry header{display:flex;justify-content:space-between;gap:8px;align-items:center;margin:0 0 8px}
 .entry p{margin:0;white-space:pre-wrap;word-break:break-word}
+.entry-ops{display:flex;gap:6px;align-items:center;flex:0 0 auto}
+.entry.is-editing{
+  border-color:var(--accent);
+  background:#fffdf8;
+  box-shadow:inset 3px 0 0 var(--accent), var(--shadow);
+}
+.entry-draft{
+  width:100%;min-height:7.5rem;resize:vertical;margin:0;box-sizing:border-box;
+  background:#fffaf1;border:1.5px dashed #c4b8a4;border-radius:12px;
+  font:14px/1.55 "IBM Plex Sans","Noto Sans SC",sans-serif;
+  transition:border-color .16s ease, box-shadow .16s ease, background .16s ease;
+}
+.entry-draft:hover{border-color:var(--accent);background:#fff}
+.entry-draft:focus{
+  outline:none;border-style:solid;border-color:var(--accent);background:#fff;
+  box-shadow:0 0 0 3px rgba(15,92,86,.14);
+}
+.entry-foot{display:flex;justify-content:flex-end;align-items:center;gap:8px;margin:10px 0 0}
+.entry-hint{margin-right:auto;color:var(--muted);font-size:12px;letter-spacing:.02em}
 .quad-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .quad{
   min-height:180px;max-height:min(42vh,320px);overflow-y:auto;scrollbar-gutter:stable;

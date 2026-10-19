@@ -49,14 +49,15 @@ function saveCatalog(rows) {
 
 const CSS = `
 @import url("https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600&family=IBM+Plex+Sans:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;600&display=swap");
-html.dsh-vue-tabs-on header [role="tablist"]:not(.dsh-vue-tablist){
+html.dsh-vue-tabs-on:not(.dsh-vue-tabs-native):not(.dsh-vue-tabs-idle) header [role="tablist"]:not(.dsh-vue-tablist){
   position:absolute!important;width:1px!important;height:1px!important;
   overflow:hidden!important;clip:rect(0 0 0 0)!important;
   pointer-events:none!important;opacity:0!important;
 }
-html.dsh-vue-tabs-on header{padding-bottom:30px;}
+html.dsh-vue-tabs-on:not(.dsh-vue-tabs-native):not(.dsh-vue-tabs-idle) header{padding-bottom:30px;}
+html.dsh-vue-tabs-native #dsh-vue-tabs-root .dsh-vue-tab{display:none!important;}
 #dsh-vue-tabs-root.dsh-vue-tabs{
-  position:fixed;z-index:40;margin:0;padding:0 16px;
+  position:fixed;z-index:60;margin:0;padding:0 8px;
   pointer-events:none;height:30px;box-sizing:border-box;
 }
 #dsh-vue-tabs-root[hidden]{display:none!important;pointer-events:none;}
@@ -181,6 +182,21 @@ function nativeTabs(list) {
 	return Array.from(list.querySelectorAll(":scope > [role='tab']"))
 }
 
+function applyHidden(hiddenNames) {
+	const hide = new Set(hiddenNames.filter((name) => !PINNED.has(name)))
+	for (const list of nativeLists()) {
+		for (const tab of nativeTabs(list)) {
+			const name = tabName(tab)
+			tab.hidden = hide.has(name)
+			tab.style.display = hide.has(name) ? "none" : ""
+		}
+	}
+}
+
+function hasNativeShelf() {
+	return nativeLists().some((list) => nativeTabs(list).length > 0)
+}
+
 function readCatalog() {
 	const list = nativeLists()[0]
 	if (!list) return []
@@ -274,19 +290,14 @@ function headerBox(header) {
 	})
 }
 
-function visibleConversationHeader() {
-	for (const header of document.querySelectorAll("header")) {
-		if (header.closest(`#${HOST_ID}`)) continue
-		if (headerBox(header)) return header
-	}
-	return null
-}
-
 function placeHost() {
 	const host = document.getElementById(HOST_ID)
 	if (!host) return
-	const header = visibleConversationHeader()
+	const list = nativeLists()[0]
+	const header = list?.closest("header") ?? null
 	const box = header ? headerBox(header) : null
+	document.documentElement.classList.remove("dsh-vue-tabs-native")
+	document.documentElement.classList.toggle("dsh-vue-tabs-idle", !box)
 	if (!box) {
 		host.hidden = true
 		host.setAttribute("aria-hidden", "true")
@@ -297,6 +308,7 @@ function placeHost() {
 	host.style.left = `${box.left}px`
 	host.style.width = `${box.width}px`
 	host.style.top = `${box.top}px`
+	host.style.height = "30px"
 }
 
 export async function mountTabShelf() {
@@ -339,7 +351,8 @@ export async function mountTabShelf() {
 					:aria-expanded="libOpen ? 'true' : 'false'"
 					title="从页签库打开"
 					aria-label="从页签库打开"
-					@click="toggleLib"
+					@click.stop="toggleLib"
+					@mousedown.stop
 				>
 					<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 1.5v9M1.5 6h9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
 				</button>
@@ -385,10 +398,17 @@ export async function mountTabShelf() {
 
 			function persist() {
 				saveHidden(hidden.value)
+				applyHidden(hidden.value)
 			}
 
 			function announce() {
 				window.dispatchEvent(new CustomEvent("dsh-tab-change", { detail: { name: active.value } }))
+			}
+
+			function isComposerNoise(mutation) {
+				const node = mutation.target
+				const el = node && node.nodeType === 1 ? node : node && node.parentElement
+				return Boolean(el && el.closest && el.closest("[data-composer-card], [data-trigger-menu], [data-composer-seat], #dsh-vue-tabs-root, #dsh-work-frame"))
 			}
 
 			function sync() {
@@ -399,9 +419,12 @@ export async function mountTabShelf() {
 				saveCatalog(catalog)
 				names.value = catalog.map((row) => row.name)
 				const current = catalog.find((row) => row.on)
+				const nextActive = current ? current.name : active.value
+				const activeChanged = nextActive !== active.value
 				if (current) active.value = current.name
+				applyHidden(hidden.value)
 				placeHost()
-				announce()
+				if (activeChanged) announce()
 			}
 
 			function select(name) {
@@ -443,9 +466,12 @@ export async function mountTabShelf() {
 				}
 			}
 
+			let ignoreDocUntil = 0
 			function toggleLib(event) {
+				event?.stopPropagation?.()
 				libOpen.value = !libOpen.value
 				if (libOpen.value) {
+					ignoreDocUntil = Date.now() + 500
 					nextTick(() => {
 						const el = event?.currentTarget || plusRef.value
 						const box = el?.getBoundingClientRect()
@@ -460,6 +486,7 @@ export async function mountTabShelf() {
 
 			function onDoc(event) {
 				if (!libOpen.value) return
+				if (Date.now() < ignoreDocUntil) return
 				if (event.target.closest(".dsh-vue-lib, .dsh-vue-plus, .dsh-vue-head")) return
 				libOpen.value = false
 			}
@@ -472,7 +499,8 @@ export async function mountTabShelf() {
 			let observer
 			onMounted(() => {
 				sync()
-				observer = new MutationObserver(() => {
+				observer = new MutationObserver((mutations) => {
+					if (mutations.every(isComposerNoise)) return
 					clearTimeout(timer)
 					timer = setTimeout(sync, 40)
 				})
@@ -486,7 +514,10 @@ export async function mountTabShelf() {
 				document.removeEventListener("keydown", onKey, true)
 			})
 
-			window.__dshTabShelf = { open, close, restore, toggleLib, sync }
+			window.__dshTabShelf = {
+				open, close, restore, toggleLib, sync, select,
+				active: () => active.value,
+			}
 
 			return {
 				names, hidden, active, libOpen, libStyle, plusRef, pinned,

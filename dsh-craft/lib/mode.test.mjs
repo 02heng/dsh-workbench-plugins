@@ -45,8 +45,17 @@ assert(ask.includes("不发微信"), ask)
 const plan = promptFor({ mode: "plan", expert: "thesis", planConfirmed: false })
 assert(plan.includes("2") && plan.includes("做法"), plan)
 assert(plan.includes("课题"), plan)
+assert(plan.includes("craft_options"), plan)
 const craft = promptFor({ mode: "craft", expert: "official" })
 assert(craft.includes("做一做"), craft)
 assert(craft.includes("公文"), craft)
+assert(craft.includes("文号"), craft)
+const picked = promptFor({
+	mode: "plan",
+	expert: "none",
+	planConfirmed: true,
+	options: { picked: 0, options: [{ title: "纸感", summary: "米白墨绿" }] },
+})
+assert(picked.includes("已选定做法：纸感"), picked)
 
 console.log("PASS mode")

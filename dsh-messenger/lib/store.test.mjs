@@ -146,4 +146,49 @@ if (again.purged !== 0) {
 await rm(purgeRoot, { recursive: true, force: true })
 
 await rm(root, { recursive: true, force: true })
+
+const lineRoot = "D:/dsh-workbench/messenger/_test-store-lines"
+await rm(lineRoot, { recursive: true, force: true })
+await mkdir(lineRoot, { recursive: true })
+const lineStore = createStore(lineRoot)
+const seeded = await lineStore.loadConfig()
+if (seeded.lines[0].name !== "黄山" || seeded.password !== "任务:") {
+	console.error("FAIL default line", seeded)
+	process.exit(1)
+}
+const added = await lineStore.upsertLine({ name: "张三" })
+if (!added.lines.some((row) => row.name === "张三") || added.contact !== "张三") {
+	console.error("FAIL upsert line", added)
+	process.exit(1)
+}
+const pw = await lineStore.upsertPassword(added.activeLineId, { token: "补齐", prompt: "请补齐：{{input}}" })
+const zhang = pw.lines.find((row) => row.name === "张三")
+if (!zhang.passwords.some((row) => row.token === "补齐")) {
+	console.error("FAIL upsert password", pw)
+	process.exit(1)
+}
+await lineStore.selectLine(seeded.lines[0].id)
+const selected = await lineStore.loadConfig()
+if (selected.contact !== "黄山") {
+	console.error("FAIL select line", selected)
+	process.exit(1)
+}
+await lineStore.deleteLine(zhang.id)
+const afterLineDel = await lineStore.loadConfig()
+if (afterLineDel.lines.some((row) => row.name === "张三")) {
+	console.error("FAIL delete line", afterLineDel)
+	process.exit(1)
+}
+try {
+	await lineStore.deleteLine(afterLineDel.lines[0].id)
+	console.error("FAIL must keep one line")
+	process.exit(1)
+} catch (error) {
+	if (!String(error.message).includes("至少留一条专线")) {
+		console.error("FAIL last line message", error)
+		process.exit(1)
+	}
+}
+await rm(lineRoot, { recursive: true, force: true })
+
 console.log("PASS store")

@@ -1,5 +1,21 @@
 import { mkdir, readFile, rm } from "node:fs/promises"
-import { createSidecar } from "./sidecar.js"
+import { createSidecar, sidecarChildEnv } from "./sidecar.js"
+
+const stripped = sidecarChildEnv({
+	HTTP_PROXY: "http://127.0.0.1:7897",
+	HTTPS_PROXY: "http://127.0.0.1:7897",
+	http_proxy: "http://127.0.0.1:7897",
+	https_proxy: "http://127.0.0.1:7897",
+	ALL_PROXY: "socks5://127.0.0.1:7897",
+})
+if (stripped.HTTP_PROXY || stripped.HTTPS_PROXY || stripped.http_proxy || stripped.https_proxy || stripped.ALL_PROXY) {
+	console.error("FAIL proxy leaked", stripped.HTTP_PROXY, stripped.HTTPS_PROXY)
+	process.exit(1)
+}
+if (!String(stripped.NO_PROXY || "").includes("127.0.0.1")) {
+	console.error("FAIL no_proxy", stripped.NO_PROXY)
+	process.exit(1)
+}
 
 const root = "D:/dsh-workbench/messenger/_test-sidecar"
 await rm(root, { recursive: true, force: true })

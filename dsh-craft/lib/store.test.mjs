@@ -29,6 +29,7 @@ try {
 await store.chooseOption(0)
 snap = await store.snapshot()
 if (!snap.planConfirmed || snap.options.picked !== 0) throw new Error("picked")
+if (!snap.prompt.includes("短讯")) throw new Error("picked prompt")
 
 await store.add("课题预审")
 snap = await store.snapshot()

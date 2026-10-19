@@ -20,7 +20,6 @@
     "client": {
       "inject": [
         "@deepseek-ai/dsh-client-ui-theme",
-        "@deepseek-ai/dsh-client-runtime",
         "@deepseek-ai/dsh-client-ui-slots",
         "@deepseek-ai/dsh-client-locale"
       ],
@@ -51,7 +50,8 @@
   ],
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
-    "@deepseek-ai/dsh-client-runtime": "^0.0.1-rc.1",
+    "@deepseek-ai/dsh-client-store": "*",
+    "@deepseek-ai/dsh-client-ui-slots": "*",
     "@deepseek-ai/schemastery": "^3.18.1",
     "@dshthemes/core": "^0.2.0",
     "react": "^18.2.0 || ^19.0.0"
@@ -60,7 +60,10 @@
     "@deepseek-ai/cordis": {
       "optional": true
     },
-    "@deepseek-ai/dsh-client-runtime": {
+    "@deepseek-ai/dsh-client-store": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-slots": {
       "optional": true
     },
     "@deepseek-ai/schemastery": {

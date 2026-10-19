@@ -80,6 +80,21 @@ await drain({
 })
 
 if (created.length !== 1) fail(`create once, got ${created.length}`)
+if (!created[0].tools?.includes("mcp") || !created[0].tools?.includes("edit")) {
+	fail("must offer Cursor mcp and edit", created[0].tools)
+}
+if (created[0].tools?.includes("grep") || created[0].tools?.includes("glob")) {
+	fail("must not offer broken Cursor grep/glob", created[0].tools)
+}
+if (!created[0].local?.customTools?.office_word_write) {
+	fail("must expose office_word_write as custom MCP tool")
+}
+if (!created[0].local?.customTools?.kb_search || !created[0].local?.customTools?.docs_list) {
+	fail("must expose knowledge-base tools")
+}
+if (!created[0].local?.customTools?.craft_task || !created[0].local?.customTools?.workspace_glob) {
+	fail("must expose craft_task and workspace_glob")
+}
 if (resumed.length !== 0) fail("live agent must not resume")
 if (sent.length !== 2) fail(`send twice, got ${sent.length}`)
 if (waits.length !== 2) fail(`wait after each stream, got ${waits.length}`)

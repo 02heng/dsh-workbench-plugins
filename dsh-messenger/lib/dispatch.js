@@ -1,7 +1,10 @@
 import { join } from "node:path"
+import { materializeFromTurn, lastRoleText } from "../../dsh-office/lib/materialize.js"
 import { listDeliverables, workRoot } from "./deliverables.js"
 import { enqueueOut } from "./outbox.js"
+import { findLineByName } from "./lines.js"
 import { parseInbound } from "./password.js"
+import { replySelection } from "./reply-model.js"
 import { captureScreen } from "./shot.js"
 
 const CWD = "D:/dsh-workbench"
@@ -33,13 +36,13 @@ function sessionIdOf(result) {
 
 export async function handleInbound(store, body, api) {
 	const config = await store.loadConfig()
-	const contact = config.contact ?? "黄山"
 	const from = String(body?.from ?? "").trim()
-	if (from !== contact) throw new Error("只收黄山")
+	const line = findLineByName(config, from)
+	if (!line) throw new Error("未登记的联系人")
 
 	const kind = body.kind ?? "text"
 	const text = body.text ?? ""
-	const parsed = parseInbound(text, kind)
+	const parsed = parseInbound(text, kind, line.passwords)
 	const action = parsed.action
 
 	if (action === "ignore") {
@@ -72,7 +75,7 @@ export async function handleInbound(store, body, api) {
 	} catch { /* 派活台未装时不挡微信 */ }
 
 	const id = await store.nextTaskId()
-	const title = `微信·黄山·${id}`
+	const title = `微信·${line.name}·${id}`
 	await store.appendItem({
 		id,
 		from,
@@ -100,12 +103,25 @@ export async function handleInbound(store, body, api) {
 		if (!sessionId) {
 			return store.updateItem(id, { status: "dispatch-failed", error: "create 未返回 sessionId" })
 		}
+		const picked = replySelection(config)
+		if (picked) {
+			if (typeof api.sessions.selectModel !== "function") {
+				return store.updateItem(id, { status: "dispatch-failed", error: "没有 selectModel" })
+			}
+			const selected = await api.sessions.selectModel({
+				rpcId: rpcId(),
+				payload: { sessionId, ...picked },
+			})
+			if (rpcFailed(selected)) {
+				return store.updateItem(id, { status: "dispatch-failed", error: errorOf(selected, "selectModel failed") })
+			}
+		}
 		const prompted = await api.sessions.prompt({
 			rpcId: rpcId(),
 			payload: {
 				sessionId,
 				mode: "queue",
-				content: [{ type: "text", text: parsed.prompt }],
+				content: [{ type: "text", text: weixinWorkPrompt(parsed.prompt, line.name) }],
 			},
 		})
 		if (rpcFailed(prompted)) {
@@ -128,43 +144,74 @@ export async function handleInbound(store, body, api) {
 	}
 }
 
-async function replyCompleted(store, item) {
+function weixinWorkPrompt(userText, contact = "黄山") {
+	return `${userText}
+
+【微信回件】本地网关（DeepSeek/豆包网页）不能生成 Word/Excel/PPT 文件。请把完整正文、表格或课件提纲写在回复里，工作台会自动落成 docx / xlsx / pptx 发到微信。若当前模型能调用 office_word_write / office_excel_write / office_ppt_write，也可以直接写到 D:/dsh-workbench/docs。禁止只回一句「已完成」，禁止 zip。请先打开微信里的「${contact}」会话。`
+}
+
+async function replyCompleted(store, item, options = {}) {
+	const capture = options.capture ?? captureScreen
 	try {
-		const dest = join(store.root, "shots", `${item.id}.png`)
-		const shot = await captureScreen(dest)
 		const since = Date.parse(item.at) || 0
-		const files = item.files?.length
+		let files = item.files?.length
 			? item.files
-			: await listDeliverables(join(workRoot(), "docs"), since)
+			: await listDeliverables(workRoot(), since)
+		if (!files.length) {
+			const made = await materializeFromTurn({
+				userText: item.prompt || item.text,
+				assistantText: lastRoleText(options.session, "assistant"),
+				destDir: join(workRoot(), "docs"),
+				basename: item.id,
+				title: item.title || item.id,
+			})
+			if (made?.path) files = [made.path]
+		}
 		for (const file of files) {
 			await enqueueOut(store, {
 				type: "file",
-				to: "黄山",
+				to: item.from || "黄山",
 				text: "",
 				file,
 				taskId: item.id,
 			})
 		}
-		await enqueueOut(store, {
-			type: "image",
-			to: "黄山",
-			text: `任务 ${item.id} 已完成`,
-			file: shot.path,
-			taskId: item.id,
-		})
+		try {
+			const dest = join(store.root, "shots", `${item.id}.png`)
+			const shot = await capture(dest)
+			await enqueueOut(store, {
+				type: "image",
+				to: item.from || "黄山",
+				text: `任务 ${item.id} 已完成`,
+				file: shot.path,
+				taskId: item.id,
+			})
+		} catch (shotErr) {
+			const error = String(shotErr?.message ?? shotErr)
+			if (!files.length) {
+				return store.updateItem(item.id, { status: "shot-failed", error })
+			}
+			await enqueueOut(store, {
+				type: "text",
+				to: item.from || "黄山",
+				text: `任务 ${item.id} 已完成`,
+				taskId: item.id,
+			})
+			return store.updateItem(item.id, { status: "replying", files, error })
+		}
 		return store.updateItem(item.id, { status: "replying", files })
 	} catch {
 		return store.updateItem(item.id, { status: "shot-failed" })
 	}
 }
 
-export async function finishTurn(store, item, reason) {
+export async function finishTurn(store, item, reason, options) {
 	if (item.status === "replied" || item.status === "replying") return item
-	if (reason === "completed") return replyCompleted(store, item)
+	if (reason === "completed") return replyCompleted(store, item, options)
 	try {
 		await enqueueOut(store, {
 			type: "text",
-			to: "黄山",
+			to: item.from || "黄山",
 			text: `任务 ${item.id} 未完成：${reason}`,
 			taskId: item.id,
 		})
@@ -186,7 +233,7 @@ export async function retryTask(store, body, api) {
 	if (mode === "dispatch") {
 		return handleInbound(store, {
 			from: item.from ?? "黄山",
-			text: `任务: ${item.prompt ?? ""}`,
+			text: item.text || `${item.prompt ?? ""}`,
 			kind: "text",
 		}, api)
 	}
@@ -210,6 +257,6 @@ export function watchTurns(ctx, store, onEnd = defaultOnEnd) {
 		const item = items.find((row) => row.sessionId === session?.id && row.status === "running")
 		if (!item) return
 		const reason = event.data?.reason?.kind ?? event.reason?.kind ?? "unknown"
-		await onEnd(item, reason)
+		await onEnd(item, reason, session)
 	}, { global: true })
 }

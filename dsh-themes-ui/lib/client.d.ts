@@ -19,10 +19,8 @@ export interface PickerClientContext {
     effect(thunk: () => unknown, label?: string): void;
     on(event: string, listener: (payload: unknown) => void): () => void;
     theme: PickerThemeService;
-    settingsScope: {
-        bind<T>(spec: {
-            namespace: string;
-        }): PickerSettingsScope<T>;
+    configForms: {
+        get<T>(entryId: string): PickerSettingsScope<T>;
     };
     slots: {
         inject(name: string, factory: () => unknown): void;
@@ -33,7 +31,7 @@ export interface PickerClientContext {
     };
 }
 /** Services this plugin consumes. */
-export declare const inject: readonly ["theme", "settingsScope", "slots", "locale"];
+export declare const inject: readonly ["theme", "configForms", "slots", "locale"];
 /**
  * Client plugin body: register all shipped themes, own the durable
  * third-party selection, and inject the picker row into the settings General

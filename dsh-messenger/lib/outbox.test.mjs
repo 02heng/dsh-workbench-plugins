@@ -31,6 +31,21 @@ if (empty.length !== 0) {
 	process.exit(1)
 }
 
+const oneA = await enqueueOut(store, { type: "file", to: "黄山", text: "", file: "a.docx", taskId: "T-one-a" })
+const oneB = await enqueueOut(store, { type: "file", to: "黄山", text: "", file: "b.xlsx", taskId: "T-one-b" })
+const firstOnly = await takeOutbox(store)
+if (firstOnly.length !== 1 || firstOnly[0].id !== oneA.id) {
+	console.error("FAIL take one job", firstOnly)
+	process.exit(1)
+}
+const secondOnly = await takeOutbox(store)
+if (secondOnly.length !== 1 || secondOnly[0].id !== oneB.id) {
+	console.error("FAIL take next job", secondOnly)
+	process.exit(1)
+}
+await ackOut(store, oneA.id, true)
+await ackOut(store, oneB.id, true)
+
 const sent = await ackOut(store, job.id, true)
 if (sent.status !== "sent" || sent.id !== job.id) {
 	console.error("FAIL ack ok", sent)
@@ -103,6 +118,21 @@ await ackOut(inboxStore, imgFail.id, false, "SendFiles 失败")
 const afterFail = (await inboxStore.listItems()).find((row) => row.id === "T-0815-10")
 if (afterFail.status !== "shot-failed") {
 	console.error("FAIL ack inbox fail status", afterFail)
+	process.exit(1)
+}
+
+await inboxStore.appendItem({
+	id: "T-0815-11", from: "黄山", text: "任务: 文", kind: "text",
+	action: "dispatch", status: "replying", prompt: "文",
+})
+const fileFail = await enqueueOut(inboxStore, {
+	type: "file", to: "黄山", text: "", file: "z.docx", taskId: "T-0815-11",
+})
+await takeOutbox(inboxStore)
+await ackOut(inboxStore, fileFail.id, false, "选择文件失败")
+const afterFileFail = (await inboxStore.listItems()).find((row) => row.id === "T-0815-11")
+if (afterFileFail.status === "shot-failed") {
+	console.error("FAIL file fail must not mark shot-failed", afterFileFail)
 	process.exit(1)
 }
 await rm(inboxRoot, { recursive: true, force: true })

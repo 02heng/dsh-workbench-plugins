@@ -6,16 +6,23 @@ import traceback
 import urllib.error
 import urllib.request
 
-from listen_helpers import CONTACT, inbound_allowed, is_self, require_send_ok
+from listen_helpers import CONTACT, active_contact, inbound_allowed, is_self, require_send_ok
 from weixin_inbox import WeixinInbox
 from weixin_keys import redact
-from weixin_send import SendError, send_file, send_screenshot, send_text
+from weixin_send import SEND_PAUSE, SendError, pace, send_file, send_screenshot, send_text
 
 BASE = os.environ.get("DSH_MESSENGER", "http://127.0.0.1:3080").rstrip("/")
 INBOUND = "/plugins/dsh-messenger/wx/inbound"
 HEALTH = "/plugins/dsh-messenger/wx/health"
 OUTBOX = "/plugins/dsh-messenger/wx/outbox"
 ACK = "/plugins/dsh-messenger/wx/outbox/ack"
+# DSH 在本机。工作台若带着 HTTP_PROXY 启动，侧车不能把 127.0.0.1 也丢给代理。
+for _key in list(os.environ):
+    if _key.lower() in ("http_proxy", "https_proxy", "all_proxy", "ftp_proxy"):
+        os.environ.pop(_key, None)
+os.environ["NO_PROXY"] = "127.0.0.1,localhost,::1"
+os.environ["no_proxy"] = os.environ["NO_PROXY"]
+_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 
 def log(msg):
@@ -30,7 +37,7 @@ def request(path, method="GET", body=None):
         method=method,
         headers={"Content-Type": "application/json; charset=utf-8"} if data is not None else {},
     )
-    with urllib.request.urlopen(req, timeout=10) as resp:
+    with _OPENER.open(req, timeout=10) as resp:
         raw = resp.read().decode("utf-8")
         return json.loads(raw) if raw else {}
 
@@ -56,27 +63,30 @@ def msg_kind(msg):
     return "other"
 
 
-def on_message(msg, chat=None):
+def on_message(msg, chat=None, contact=None):
+    contact = contact or active_contact()
     try:
         if isinstance(msg, dict):
             payload = {
-                "from": CONTACT,
+                "from": contact,
                 "text": str(msg.get("content") or ""),
                 "kind": msg.get("kind") or "text",
             }
         else:
             if is_self(msg):
-                return
-            if not inbound_allowed(msg, chat, CONTACT):
-                return
+                return True
+            if not inbound_allowed(msg, chat, contact):
+                return True
             payload = {
-                "from": CONTACT,
+                "from": contact,
                 "text": str(getattr(msg, "content", "") or ""),
                 "kind": msg_kind(msg),
             }
         request(INBOUND, "POST", payload)
+        return True
     except Exception as exc:
         log(f"inbound 失败: {redact(exc)}")
+        return False
 
 
 def msg_id(msg):
@@ -139,8 +149,8 @@ def list_weixin_windows():
     return rows
 
 
-def connect():
-    return WeixinInbox(CONTACT).bind()
+def connect(contact=None):
+    return WeixinInbox(contact or active_contact()).bind()
 
 
 def drain_outbox(wx=None, inbox=None):
@@ -154,49 +164,58 @@ def drain_outbox(wx=None, inbox=None):
     for job in jobs:
         job_id = job.get("id")
         try:
-            to = job.get("to") or CONTACT
+            to = job.get("to") or active_contact()
             file_path = job.get("file")
             text = job.get("text") or ""
             before = inbox.latest_seq() if inbox is not None else None
             if wx is not None and (hasattr(wx, "SendFiles") or hasattr(wx, "SendMsg")):
                 if job.get("type") == "image" or file_path:
                     require_send_ok(wx.SendFiles(file_path, to), "SendFiles")
+                    pace()
                     if text:
                         require_send_ok(wx.SendMsg(text, to), "SendMsg")
                 else:
                     require_send_ok(wx.SendMsg(text, to), "SendMsg")
-            elif job.get("type") == "image":
-                send_screenshot(to, text)
             elif file_path:
                 send_file(file_path, text, to)
+            elif job.get("type") == "image":
+                send_screenshot(to, text)
             else:
                 send_text(text, to)
             if inbox is not None and not inbox.wait_new(before, timeout=12):
                 raise SendError("微信会话里没有出现新消息，未发出")
             request(ACK, "POST", {"id": job_id, "ok": True})
+            pace()
         except Exception as exc:
             log(f"outbox 发送失败 {job_id}: {redact(exc)}")
             try:
                 request(ACK, "POST", {"id": job_id, "ok": False, "error": redact(exc)})
             except Exception as ack_exc:
                 log(f"outbox ack 失败: {redact(ack_exc)}")
+            return
 
 
 def main():
     while True:
         box = None
+        wanted = ""
         try:
-            box = connect()
-            log(f"已监听 {CONTACT} mode=db")
-            post_health(True)
             while True:
+                contact = active_contact()
+                if box is None or getattr(box, "contact", None) != contact:
+                    box = connect(contact)
+                    wanted = contact
+                    log(f"已监听 {contact} mode=db")
+                    post_health(True)
                 drain_outbox(inbox=box)
                 for msg in box.poll():
-                    on_message(msg)
+                    if not on_message(msg, contact=contact):
+                        break
+                    box.mark_seen(msg.get("sort_seq"))
                 time.sleep(2)
         except Exception as exc:
             err = redact(exc)
-            log(f"未登录或找不到{CONTACT}: {err}")
+            log(f"未登录或找不到{wanted or active_contact()}: {err}")
             post_health(False, err)
             time.sleep(10)
 

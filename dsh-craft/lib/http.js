@@ -1,5 +1,6 @@
+import { readFileSync } from "node:fs"
 import { readFile } from "node:fs/promises"
-import { dirname } from "node:path"
+import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { createLive, loadFresh } from "../../dsh-work-ui/live.js"
 import { createCraftStore, mergeTaskCards, searchRoots } from "./store.js"
@@ -34,6 +35,11 @@ async function readBody(req) {
 	for await (const chunk of req) chunks.push(chunk)
 	if (chunks.length === 0) return {}
 	return JSON.parse(Buffer.concat(chunks).toString("utf8"))
+}
+
+function sendJs(res, name) {
+	res.writeHead(200, { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-store" })
+	res.end(readFileSync(join(here, name), "utf8"))
 }
 
 function guard(req, res) {
@@ -97,6 +103,11 @@ export function registerCraft(webServer, config = {}) {
 		},
 	})
 
+	stops.push(webServer.register({
+		kind: "exact",
+		path: "/plugins/dsh-craft/chips.js",
+		handler: (_req, res) => sendJs(res, "chips.js"),
+	}))
 	stops.push(webServer.register({
 		kind: "exact",
 		path: "/plugins/dsh-craft/desk",

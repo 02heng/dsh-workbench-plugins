@@ -17,6 +17,12 @@ export function isAtelierShowCurrent(id) {
 	return Number(id) === atelierShowGen
 }
 
+/** A new conversation has the composer and no tall session view yet. */
+export function isWelcomeLayout({ view, composer } = {}) {
+	if (view && view.width >= 320 && view.height >= 120) return false
+	return Boolean(composer)
+}
+
 export function computeAtelierBox({ view, header, aside, composer, viewport }) {
 	const vw = viewport?.width ?? 0
 	const vh = viewport?.height ?? 0

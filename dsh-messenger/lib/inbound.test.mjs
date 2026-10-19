@@ -31,7 +31,7 @@ try {
 	console.error("FAIL should reject foreign sender")
 	process.exit(1)
 } catch (error) {
-	if (!String(error.message).includes("只收黄山")) {
+	if (!String(error.message).includes("未登记的联系人")) {
 		console.error("FAIL message", error)
 		process.exit(1)
 	}

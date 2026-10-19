@@ -104,5 +104,50 @@ export function registerWall(webServer, config) {
 			catch (error) { json(res, 500, { error: String(error?.message ?? error) }) }
 		},
 	}))
+	for (const stop of registerCraftChips(webServer)) stops.push(stop)
 	return () => { for (const stop of stops) stop?.() }
+}
+
+let craftStorePromise
+function craftStore() {
+	if (!craftStorePromise) {
+		craftStorePromise = import("../../dsh-craft/lib/store.js").then((mod) => mod.createCraftStore("D:/dsh-workbench/craft"))
+	}
+	return craftStorePromise
+}
+
+async function readJsonBody(req) {
+	const chunks = []
+	for await (const chunk of req) chunks.push(chunk)
+	if (chunks.length === 0) return {}
+	return JSON.parse(Buffer.concat(chunks).toString("utf8"))
+}
+
+function registerCraftChips(webServer) {
+	const stops = []
+	stops.push(webServer.register({
+		kind: "exact",
+		path: "/plugins/dsh-dashboard/craft-chips.js",
+		handler: (_req, res) => sendFile(res, "D:/dsh-plugins/dsh-craft/lib/chips.js", "text/javascript; charset=utf-8"),
+	}))
+	stops.push(webServer.register({
+		kind: "exact",
+		path: "/plugins/dsh-dashboard/craft-state",
+		handler: async (_req, res) => {
+			try { json(res, 200, await (await craftStore()).snapshot()) }
+			catch (error) { json(res, 500, { error: String(error?.message ?? error) }) }
+		},
+	}))
+	const post = (path, fn) => webServer.register({
+		kind: "exact",
+		path,
+		handler: async (req, res) => {
+			if (req.method !== "POST") return json(res, 405, { error: "要用 POST" })
+			try { json(res, 200, await fn(await readJsonBody(req))) }
+			catch (error) { json(res, 400, { error: String(error?.message ?? error) }) }
+		},
+	})
+	stops.push(post("/plugins/dsh-dashboard/craft-mode", async (body) => (await craftStore()).setMode(body.mode, { channel: body.channel })))
+	stops.push(post("/plugins/dsh-dashboard/craft-expert", async (body) => (await craftStore()).setExpert(body.expert)))
+	return stops
 }

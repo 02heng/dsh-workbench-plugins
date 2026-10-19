@@ -24,7 +24,18 @@ from weixin_db import (
 )
 from weixin_keys import keys_status, load_keys
 
-STAMP = "2"
+STAMP = "3"
+
+
+def cache_stamp(src):
+    src = Path(src)
+    st = src.stat()
+    wal = Path(str(src) + "-wal")
+    wal_part = "0"
+    if wal.exists():
+        wst = wal.stat()
+        wal_part = f"{wst.st_mtime_ns}:{wst.st_size}"
+    return f"{STAMP}:{st.st_mtime_ns}:{st.st_size}:{wal_part}"
 
 
 def _rel_key(keys, rel):
@@ -50,7 +61,7 @@ class WeixinInbox:
         self.username = None
         self.cursor = None
 
-    def _decrypt(self, rel):
+    def _decrypt(self, rel, force=False):
         src = self.storage / rel
         if not src.exists():
             raise RuntimeError(DB_FAIL)
@@ -62,8 +73,13 @@ class WeixinInbox:
             raise RuntimeError(BAD_KEYS)
         dest = self.cache / rel.replace("\\", "__").replace("/", "__")
         stamp = dest.with_suffix(dest.suffix + ".stamp")
-        meta = f"{STAMP}:{src.stat().st_mtime_ns}:{src.stat().st_size}"
-        if dest.exists() and stamp.exists() and stamp.read_text(encoding="utf-8") == meta:
+        meta = cache_stamp(src)
+        if (
+            not force
+            and dest.exists()
+            and stamp.exists()
+            and stamp.read_text(encoding="utf-8") == meta
+        ):
             return dest
         decrypt_file(str(src), str(dest), key)
         wal = Path(str(src) + "-wal")
@@ -146,18 +162,47 @@ class WeixinInbox:
                 "kind": msg_kind(row.get("local_type")),
                 "sort_seq": row.get("sort_seq"),
             })
-            self.cursor = int(row.get("sort_seq") or self.cursor or 0)
-        if out:
-            save_cursor(CURSOR_PATH, self.contact, self.cursor)
         return out
 
+    def mark_seen(self, sort_seq):
+        seq = int(sort_seq or 0)
+        if seq <= int(self.cursor or 0):
+            return
+        self.cursor = seq
+        save_cursor(CURSOR_PATH, self.contact, self.cursor)
+
     def latest_seq(self):
-        return snapshot_seq(self._raw_messages(0))
+        if not self.username:
+            return 0
+        table = msg_table(self.username)
+        mx = 0
+        for name in ("message/message_0.db", "message/message_1.db"):
+            src = self.storage / name
+            if not src.exists():
+                continue
+            try:
+                dest = self._decrypt(name, force=True)
+                conn = open_sqlite(str(dest))
+            except Exception:
+                continue
+            try:
+                found = conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+                    (table,),
+                ).fetchone()
+                if not found:
+                    continue
+                row = conn.execute(f"SELECT MAX(sort_seq) m FROM {table}").fetchone()
+                mx = max(mx, int(row["m"] or 0))
+            finally:
+                conn.close()
+        return mx
 
     def wait_new(self, before, timeout=10):
         deadline = time.time() + timeout
+        before = int(before or 0)
         while time.time() < deadline:
-            if rows_after(self._raw_messages(0), before):
+            if self.latest_seq() > before:
                 return True
             time.sleep(0.4)
         return False

@@ -2,7 +2,7 @@ import { readdir, stat } from "node:fs/promises"
 import { extname, join } from "node:path"
 
 const SKIP = new Set(["messenger", ".dsh", "node_modules", ".git", "wx-cache"])
-const EXTS = new Set([".docx", ".xlsx", ".pdf"])
+const EXTS = new Set([".docx", ".xlsx", ".pptx", ".pdf"])
 
 export function workRoot() {
 	return process.env.DSH_WORK_ROOT ?? "D:/dsh-workbench"

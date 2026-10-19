@@ -68,6 +68,7 @@ window.__ModuleLoader__.load({
 			"html.dsh-paper [class*='viewArea']>.dsh-wall-frame,html.dsh-paper [class*='viewArea']>div{",
 			"flex:1 1 auto;min-height:72vh;height:100%;",
 			"}",
+			"html.dsh-paper [data-composer-card]{overflow:visible!important;}",
 		].join("");
 
 		function ensureCss() {
@@ -108,7 +109,7 @@ window.__ModuleLoader__.load({
 			var script = document.createElement("script");
 			script.type = "module";
 			script.dataset.dshVueTabs = "1";
-			script.textContent = 'import { mountTabShelf } from "/plugins/dsh-dashboard/vue-tabs.js"; mountTabShelf();';
+			script.textContent = 'import { mountTabShelf } from "/plugins/dsh-dashboard/vue-tabs.js?v=20260930c"; mountTabShelf();';
 			document.head.appendChild(script);
 		}
 
@@ -146,27 +147,6 @@ window.__ModuleLoader__.load({
 			};
 		}
 
-		function workHash(name) {
-			var label = cleanName(name);
-			var map = {
-				"信使": "#/desk",
-				"知识库": "#/inbox",
-				"循环任务": "#/board",
-				"数据大屏": "#/wall",
-				"书籍转技能": "#/atelier/book",
-				"轨迹": "#/atelier/trail",
-				"记忆": "#/atelier/memory",
-				"技能": "#/atelier/skills",
-				"待办": "#/atelier/todos",
-			};
-			if (map[label]) return map[label];
-			var keys = Object.keys(map);
-			for (var i = 0; i < keys.length; i++) {
-				if (label.indexOf(keys[i]) === 0) return map[keys[i]];
-			}
-			return "";
-		}
-
 		function frameEl() {
 			var frame = document.getElementById("dsh-work-frame");
 			if (frame) return frame;
@@ -179,7 +159,33 @@ window.__ModuleLoader__.load({
 			return frame;
 		}
 
+		function welcomeLayout() {
+			var viewEl = document.querySelector("[class*='viewArea']");
+			var view = viewEl ? viewEl.getBoundingClientRect() : null;
+			if (view && view.width >= 320 && view.height >= 120) return false;
+			return Boolean(document.querySelector("[data-composer-seat], [data-composer-card]"));
+		}
+
+		var welcomeLock = false;
+		function settleWelcome() {
+			if (welcomeLock) return;
+			welcomeLock = true;
+			try {
+				if (document.documentElement.getAttribute("data-workbench")) hideWork();
+				var shelf = window.__dshTabShelf;
+				if (shelf && typeof shelf.active === "function" && shelf.active() !== "对话" && typeof shelf.select === "function") {
+					shelf.select("对话");
+				}
+			} finally {
+				welcomeLock = false;
+			}
+		}
+
 		function placeFrame() {
+			if (welcomeLayout()) {
+				settleWelcome();
+				return;
+			}
 			var frame = document.getElementById("dsh-work-frame");
 			if (!frame || !document.documentElement.getAttribute("data-workbench")) return;
 			frame.style.display = "block";
@@ -202,45 +208,86 @@ window.__ModuleLoader__.load({
 			frame.setAttribute("height", String(box.height));
 		}
 
+		function pickSessionItems(data) {
+			var bag = (data && (data.value || data.payload || data.result || data)) || {};
+			if (Array.isArray(bag)) return bag;
+			return bag.items || bag.sessions || bag.list || [];
+		}
+
+		async function fetchSessionList() {
+			var envelopes = [
+				{ type: "client-request", rpcId: crypto.randomUUID(), method: "session.list", payload: {} },
+				{ type: "req", rpcId: crypto.randomUUID(), method: "session.list", payload: {} },
+			];
+			for (var i = 0; i < envelopes.length; i++) {
+				try {
+					var res = await fetch("/api/session.list", {
+						method: "POST",
+						headers: { "content-type": "application/json" },
+						body: JSON.stringify(envelopes[i]),
+					});
+					if (!res.ok) continue;
+					var items = pickSessionItems(await res.json());
+					if (items.length) return items;
+				} catch (_error) { /* 换信封再试 */ }
+			}
+			return [];
+		}
+
+		function visibleSessionId() {
+			var nodes = document.querySelectorAll("[data-conversation-session]");
+			var fallback = "";
+			for (var i = 0; i < nodes.length; i++) {
+				var id = nodes[i].getAttribute("data-conversation-session") || "";
+				if (!id) continue;
+				if (!fallback) fallback = id;
+				var rect = nodes[i].getBoundingClientRect();
+				if (rect.width > 200 && rect.height > 80) return id;
+			}
+			return fallback;
+		}
+
 		async function resolveSessionId() {
-			if (window.__dshSessionId) return window.__dshSessionId;
+			var live = visibleSessionId();
+			if (live) {
+				window.__dshSessionId = live;
+				return live;
+			}
+			var marked = document.querySelector("[data-session-id],[data-session]");
+			if (marked) {
+				var sid = marked.getAttribute("data-session-id") || marked.getAttribute("data-session");
+				if (sid) {
+					window.__dshSessionId = sid;
+					return sid;
+				}
+			}
 			try {
-				var res = await fetch("/api/session.list", {
-					method: "POST",
-					headers: { "content-type": "application/json" },
-					body: JSON.stringify({ type: "req", rpcId: crypto.randomUUID(), method: "session.list", payload: {} }),
-				});
-				var data = await res.json();
-				var bag = data.value || data.payload || data;
-				var items = bag.items || bag.sessions || [];
+				var items = await fetchSessionList();
 				var title = (document.querySelector("header h1") || document.querySelector("header [class*='title']") || {}).textContent || "";
 				title = String(title).trim();
 				var hit = items.find(function (item) { return (item.displayTitle || item.title) === title; })
-					|| items.find(function (item) { return item.running; })
-					|| items[0];
+					|| items.find(function (item) { return item.running || item.selected || item.active; });
 				if (hit) window.__dshSessionId = hit.sessionId || hit.id;
 			} catch (_error) { /* 会话列表不是必须 */ }
 			return window.__dshSessionId || "";
 		}
 
-		function showWork(hash) {
+		async function showWork(page) {
 			ensureCss();
 			var ticket = ++showGen;
 			var frame = frameEl();
+			var sid = await resolveSessionId();
 			if (ticket !== showGen) return;
-			var app = "/plugins/dsh-work-ui/app" + hash;
-			if (!frame.dataset.ready) {
-				frame.src = app;
-				frame.dataset.ready = "1";
-			} else if (frame.dataset.hash !== hash) {
-				try {
-					if (frame.contentWindow) frame.contentWindow.location.hash = hash;
-				} catch (_error) {
-					frame.src = app;
-				}
+			var next = "/plugins/dsh-dashboard/atelier?page=" + encodeURIComponent(page)
+				+ (sid ? "&session=" + encodeURIComponent(sid) : "")
+				+ (page === "memory" ? "&r=" + Date.now() : "")
+				+ "#/" + page;
+			if (page === "memory" || frame.dataset.page !== page || frame.dataset.session !== sid) {
+				frame.src = next;
+				frame.dataset.page = page;
+				frame.dataset.session = sid || "";
 			}
-			frame.dataset.hash = hash;
-			document.documentElement.setAttribute("data-workbench", hash);
+			document.documentElement.setAttribute("data-workbench", page);
 			setDrawer(false);
 			placeFrame();
 		}
@@ -257,25 +304,39 @@ window.__ModuleLoader__.load({
 		}
 
 		function onTab(name) {
-			var hash = workHash(name);
-			if (hash) showWork(hash);
+			var page = atelierKey(name);
+			if (page) showWork(page);
 			else hideWork();
+		}
+
+		function bootCraftChips() {
+			if (document.getElementById("dsh-craft-chips-src")) return;
+			var script = document.createElement("script");
+			script.id = "dsh-craft-chips-src";
+			script.src = "/plugins/dsh-dashboard/craft-chips.js?v=20261008b";
+			document.head.appendChild(script);
 		}
 
 		function bootAtelier() {
 			if (window.__dshAtelier) return;
 			window.__dshAtelier = true;
 			ensureCss();
+			bootCraftChips();
 			window.addEventListener("dsh-tab-change", function (event) {
 				onTab(event.detail && event.detail.name);
 			});
 			window.addEventListener("resize", placeFrame);
 			var timer;
-			var watch = new MutationObserver(function () {
+			var watch = new MutationObserver(function (mutations) {
+				if (mutations.every(function (mutation) {
+					var node = mutation.target;
+					var el = node && node.nodeType === 1 ? node : node && node.parentElement;
+					return Boolean(el && el.closest && el.closest("[data-composer-card], [data-trigger-menu], [data-composer-seat], #dsh-vue-tabs-root, #dsh-work-frame"));
+				})) return;
 				clearTimeout(timer);
 				timer = setTimeout(placeFrame, 40);
 			});
-			watch.observe(document.documentElement, { childList: true, subtree: true, attributes: true });
+			watch.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["style", "class", "data-workbench", "data-composer-drawer"] });
 		}
 
 		function Handle() {
@@ -324,7 +385,16 @@ window.__ModuleLoader__.load({
 		}
 
 		function DataWallPanel() {
-			return react.createElement("div", { className: "dsh-work-slot", "aria-hidden": "true" });
+			react.useEffect(function () {
+				ensureCss();
+			}, []);
+			return react.createElement("div", { className: "dsh-wall-frame" },
+				react.createElement("iframe", {
+					src: "/plugins/dsh-dashboard/wall",
+					title: "数据大屏",
+					loading: "lazy",
+				})
+			);
 		}
 
 		var inject = ["slots"];

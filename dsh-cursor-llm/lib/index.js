@@ -42,11 +42,15 @@ export async function apply(ctx, config = {}) {
 	ctx.on("agent/request", async (payload, next) => {
 		const resolved = await next()
 		const session = payload.agent?.session
-		const header = session?.header ?? session?.requestHeader?.()
-		const sessionId = String(session?.id ?? header?.id ?? "")
-		const cwd = header?.cwd
+		const header = session?.header ?? session?.requestHeader?.() ?? {}
+		const sessionId = String(session?.id ?? header.id ?? "")
+		const cwd = header.cwd
 		if (sessionId && typeof cwd === "string" && cwd) bindSessionCwd(sessionId, cwd)
-		return routeChat(resolved, header, { provider, model })
+		return routeChat(resolved, {
+			...header,
+			agentPreset: header.agentPreset ?? header.meta?.agentPreset,
+			title: header.title,
+		}, { provider, model })
 	})
 
 	ctx.on("session/disposed", (session) => {

@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs"
-import { beginAtelierShow, cancelAtelierShow, computeAtelierBox, isAtelierShowCurrent } from "./atelier-frame.js"
+import { beginAtelierShow, cancelAtelierShow, computeAtelierBox, isAtelierShowCurrent, isWelcomeLayout } from "./atelier-frame.js"
 import { shouldHoldAtelier, unloadFrame } from "../../dsh-work-ui/lazy-tab.js"
 
 function fail(msg, extra) {
@@ -35,6 +35,10 @@ const bleed = computeAtelierBox({
 	composer: { top: 760 },
 	viewport: { width: 1440, height: 900 },
 })
+if (!isWelcomeLayout({ composer: { top: 420 } })) fail("a new conversation without a view must count as welcome")
+if (isWelcomeLayout({ view: { width: 900, height: 600 }, composer: { top: 760 } })) {
+	fail("an open session view must keep the atelier frame")
+}
 if (bleed.left < 248) fail("full-bleed view must not cover the workspace rail", bleed)
 if (bleed.top + bleed.height > 760) fail("atelier frame must stop above the composer", bleed)
 
@@ -57,8 +61,8 @@ const client = readFileSync(new URL("./client.js", import.meta.url), "utf8")
 if (client.includes("dsh-atelier-frame") || client.includes("data-atelier")) {
 	fail("dashboard client must not keep the old atelier overlay")
 }
-if (!client.includes("dsh-work-frame") || !client.includes("/plugins/dsh-work-ui/app")) {
-	fail("dashboard client must keep one work-frame on the React shell")
+if (!client.includes("dsh-work-frame") || !client.includes("/plugins/dsh-dashboard/atelier")) {
+	fail("dashboard client must show atelier pages from the existing atelier route")
 }
 if (client.includes('frame.src = "about:blank"') || client.includes("frame.src=\"about:blank\"")) {
 	fail("leaving a paper tab must hide the work-frame, not blank it")
@@ -72,6 +76,12 @@ if (/function showWork[\s\S]*?setDrawer\(true\)/.test(client) || /function showA
 const atelierSrc = readFileSync(new URL("./atelier.js", import.meta.url), "utf8")
 if (!atelierSrc.includes("paper-scroll")) {
 	fail("atelier lists must use paper-scroll")
+}
+if (!atelierSrc.includes("/memory-evolve/api/memory/update")) {
+	fail("memory ledger must save in-place edits")
+}
+if (!atelierSrc.includes("改写") || !atelierSrc.includes("保存")) {
+	fail("memory entries must expose 改写 and 保存")
 }
 
 console.log("ok")

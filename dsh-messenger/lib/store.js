@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile, appendFile } from "node:fs/promises"
 import { join } from "node:path"
 import { formatBeijingTime, ledgerDay } from "../../dsh-work-ui/time.js"
+import { activeLine, newId, normalizeLines } from "./lines.js"
 
 export { formatBeijingTime, ledgerDay }
 
@@ -114,17 +115,93 @@ export function createStore(root = "D:/dsh-workbench/messenger") {
 
 	async function loadConfig() {
 		await ensure()
-		try { return JSON.parse(await readFile(configPath, "utf8")) } catch {
-			return { contact: "黄山", password: "任务:", mailbox: "", listen: true }
+		try {
+			return normalizeLines(JSON.parse(await readFile(configPath, "utf8")))
+		} catch {
+			return normalizeLines({ mailbox: "", listen: true })
 		}
 	}
 
 	async function saveConfig(patch) {
 		const cur = await loadConfig()
-		const next = { ...cur, ...patch }
+		const next = normalizeLines({ ...cur, ...patch })
 		await writeFile(configPath, JSON.stringify(next, null, 2), "utf8")
 		return next
 	}
 
-	return { root, nextTaskId, appendItem, listItems, updateItem, deleteItem, purgeStaleItems, loadConfig, saveConfig }
+	async function upsertLine(body) {
+		const cfg = await loadConfig()
+		const name = String(body?.name ?? "").trim()
+		if (!name) throw new Error("请填写微信备注")
+		if (cfg.lines.some((line) => line.name === name && line.id !== body?.id)) {
+			throw new Error("名册里已有这个备注")
+		}
+		const id = String(body?.id ?? "").trim()
+		const existing = cfg.lines.find((line) => line.id === id)
+		const line = {
+			id: existing?.id || newId("line"),
+			name,
+			passwords: Array.isArray(body?.passwords) && body.passwords.length
+				? body.passwords
+				: (existing?.passwords ?? [{ id: newId("pw"), token: "任务:", prompt: "{{input}}" }]),
+		}
+		const lines = existing
+			? cfg.lines.map((row) => row.id === line.id ? { ...row, ...line } : row)
+			: [...cfg.lines, line]
+		return saveConfig({ lines, activeLineId: line.id })
+	}
+
+	async function selectLine(id) {
+		const cfg = await loadConfig()
+		if (!cfg.lines.some((line) => line.id === id)) throw new Error("没有这条专线")
+		return saveConfig({ activeLineId: id })
+	}
+
+	async function deleteLine(id) {
+		const cfg = await loadConfig()
+		if (cfg.lines.length <= 1) throw new Error("至少留一条专线")
+		const lines = cfg.lines.filter((line) => line.id !== id)
+		if (lines.length === cfg.lines.length) throw new Error("没有这条专线")
+		const activeLineId = cfg.activeLineId === id ? lines[0].id : cfg.activeLineId
+		return saveConfig({ lines, activeLineId })
+	}
+
+	async function upsertPassword(lineId, body) {
+		const cfg = await loadConfig()
+		const line = cfg.lines.find((row) => row.id === lineId)
+		if (!line) throw new Error("没有这条专线")
+		const token = String(body?.token ?? "").trim()
+		if (!token) throw new Error("请填写口令")
+		const id = String(body?.id ?? "").trim()
+		if (line.passwords.some((row) => row.token === token && row.id !== id)) {
+			throw new Error("这条专线已有相同口令")
+		}
+		const password = {
+			id: line.passwords.find((row) => row.id === id)?.id || newId("pw"),
+			token,
+			prompt: String(body?.prompt ?? "{{input}}"),
+		}
+		const passwords = line.passwords.some((row) => row.id === password.id)
+			? line.passwords.map((row) => row.id === password.id ? password : row)
+			: [...line.passwords, password]
+		const lines = cfg.lines.map((row) => row.id === lineId ? { ...row, passwords } : row)
+		return saveConfig({ lines, activeLineId: lineId })
+	}
+
+	async function deletePassword(lineId, passwordId) {
+		const cfg = await loadConfig()
+		const line = cfg.lines.find((row) => row.id === lineId)
+		if (!line) throw new Error("没有这条专线")
+		if (line.passwords.length <= 1) throw new Error("至少留一条口令")
+		const passwords = line.passwords.filter((row) => row.id !== passwordId)
+		if (passwords.length === line.passwords.length) throw new Error("没有这条口令")
+		const lines = cfg.lines.map((row) => row.id === lineId ? { ...row, passwords } : row)
+		return saveConfig({ lines })
+	}
+
+	return {
+		root, nextTaskId, appendItem, listItems, updateItem, deleteItem, purgeStaleItems,
+		loadConfig, saveConfig, upsertLine, selectLine, deleteLine, upsertPassword, deletePassword,
+		activeLine: async () => activeLine(await loadConfig()),
+	}
 }

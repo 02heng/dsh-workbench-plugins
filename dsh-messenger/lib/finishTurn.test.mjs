@@ -4,6 +4,15 @@ import { createStore } from "./store.js"
 import { finishTurn, retryTask } from "./dispatch.js"
 import { takeOutbox } from "./outbox.js"
 
+async function takeAllOutbox(store) {
+	const all = []
+	for (;;) {
+		const batch = await takeOutbox(store)
+		if (!batch.length) return all
+		all.push(...batch)
+	}
+}
+
 const root = "D:/dsh-workbench/messenger/_test-finish"
 await rm(root, { recursive: true, force: true })
 await mkdir(root, { recursive: true })
@@ -62,7 +71,7 @@ if (filed.status !== "replying" || !filed.files?.some((p) => p.endsWith("调研.
 	console.error("FAIL files status", filed)
 	process.exit(1)
 }
-const outFiles = await takeOutbox(store)
+const outFiles = await takeAllOutbox(store)
 if (
 	outFiles.length !== 2
 	|| outFiles[0].type !== "file"
@@ -103,6 +112,43 @@ if (shotFailed.status !== "shot-failed" || shotFailed.status === "replied") {
 	process.exit(1)
 }
 await rm(join(root, "outbox.jsonl"), { recursive: true, force: true })
+
+const captureBoomRoot = "D:/dsh-workbench/messenger/_test-finish-capture-boom"
+await rm(captureBoomRoot, { recursive: true, force: true })
+await mkdir(join(captureBoomRoot, "docs"), { recursive: true })
+process.env.DSH_WORK_ROOT = captureBoomRoot
+const captureBoomStore = createStore(captureBoomRoot)
+const captureBoomItem = await captureBoomStore.appendItem({
+	id: "T-0817-09",
+	from: "黄山",
+	text: "任务: 调研报告发给我",
+	kind: "text",
+	action: "dispatch",
+	prompt: "调研报告发给我",
+	status: "running",
+	sessionId: "sess-capture-boom",
+})
+await writeFile(join(captureBoomRoot, "docs", "调研报告.docx"), "docx-bytes")
+const afterShotFail = await finishTurn(captureBoomStore, captureBoomItem, "completed", {
+	capture: async () => { throw new Error("微信截图没有进剪贴板") },
+})
+if (afterShotFail.status !== "replying" || !afterShotFail.files?.some((p) => p.endsWith("调研报告.docx"))) {
+	console.error("FAIL shot fail must still queue files", afterShotFail)
+	process.exit(1)
+}
+const afterShotFailOut = await takeAllOutbox(captureBoomStore)
+if (
+	afterShotFailOut.length !== 2
+	|| afterShotFailOut[0].type !== "file"
+	|| !String(afterShotFailOut[0].file).endsWith("调研报告.docx")
+	|| afterShotFailOut[1].type !== "text"
+	|| afterShotFailOut[1].text !== "任务 T-0817-09 已完成"
+) {
+	console.error("FAIL shot fail outbox still sends the document", afterShotFailOut)
+	process.exit(1)
+}
+await rm(captureBoomRoot, { recursive: true, force: true })
+process.env.DSH_WORK_ROOT = root
 
 const other = await store.appendItem({
 	id: "T-0815-03",

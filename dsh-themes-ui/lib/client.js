@@ -4,8 +4,8 @@ window.__ModuleLoader__.load({
 		var module = { exports: {} };
 		var exports = module.exports;
 		Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
-		let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-runtime/client");
 		let react_jsx_runtime = require("react/jsx-runtime");
+		let _deepseek_ai_dsh_client_store = require("@deepseek-ai/dsh-client-store");
 		//#region ../core/src/themes/catppuccin.ts
 		/**
 		* Soft pastel theme inspired by Catppuccin Mocha: muted mauve accents over
@@ -1062,7 +1062,7 @@ window.__ModuleLoader__.load({
 		* the plugin's apply-world change listener is the only writer.
 		*/
 		function createPickerStore() {
-			return (0, _deepseek_ai_dsh_client_runtime_client.defineStore)({
+			return (0, _deepseek_ai_dsh_client_store.defineStore)({
 				init: () => ({
 					preference: "system",
 					activeId: "dark",
@@ -1287,7 +1287,7 @@ window.__ModuleLoader__.load({
 		/** Services this plugin consumes. */
 		const inject = [
 			"theme",
-			"settingsScope",
+			"configForms",
 			"slots",
 			"locale"
 		];
@@ -1298,7 +1298,7 @@ window.__ModuleLoader__.load({
 		*/
 		function apply(ctx) {
 			ctx.effect(() => registerThemes(ctx.theme), "dsh-themes: register themes");
-			const scope = ctx.settingsScope.bind({ namespace: THEMES_NAMESPACE });
+			const scope = ctx.configForms.get(THEMES_NAMESPACE);
 			ctx.effect(() => ctx.locale.register(SETTINGS_NS, {
 				en,
 				zh

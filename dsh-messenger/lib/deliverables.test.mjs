@@ -11,6 +11,7 @@ await mkdir(join(root, ".dsh"), { recursive: true })
 const since = Date.now() - 1000
 await writeFile(join(root, "docs", "方案", "调研.docx"), "docx")
 await writeFile(join(root, "docs", "方案", "表.xlsx"), "xlsx")
+await writeFile(join(root, "docs", "方案", "课.pptx"), "pptx")
 await writeFile(join(root, "docs", "方案", "build.py"), "print(1)")
 await writeFile(join(root, "docs", "方案", "pack.zip"), "zip")
 await writeFile(join(root, "docs", "old.docx"), "old")
@@ -19,7 +20,7 @@ await writeFile(join(root, "messenger", "secret.docx"), "no")
 await writeFile(join(root, ".dsh", "skip.docx"), "no")
 
 const files = await listDeliverables(root, since)
-if (files.length !== 2 || !files.some((p) => p.endsWith("调研.docx")) || !files.some((p) => p.endsWith("表.xlsx"))) {
+if (files.length !== 3 || !files.some((p) => p.endsWith("调研.docx")) || !files.some((p) => p.endsWith("表.xlsx")) || !files.some((p) => p.endsWith("课.pptx"))) {
 	console.error("FAIL list", files)
 	process.exit(1)
 }

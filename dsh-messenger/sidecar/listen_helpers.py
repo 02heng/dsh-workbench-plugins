@@ -1,6 +1,22 @@
 import os
 
 CONTACT = os.environ.get("DSH_WX_CONTACT", "黄山")
+CONFIG_PATH = os.environ.get("DSH_WX_CONFIG", r"D:\dsh-workbench\messenger\config.json")
+
+
+def active_contact():
+    try:
+        import json
+        with open(CONFIG_PATH, encoding="utf-8") as fh:
+            data = json.load(fh)
+        name = str((data or {}).get("contact") or "").strip()
+        if name:
+            return name
+    except Exception:
+        pass
+    return CONTACT
+
+
 QT_SHELL_HINT = (
 	"微信窗口开着，但当前是 Qt 加速渲染（Qt51514QWindowIcon），"
 	"里面没有 mmui 主窗口，wxauto4 认不到会话列表。"

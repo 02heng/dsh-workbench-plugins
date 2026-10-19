@@ -71,8 +71,10 @@ export async function takeOutbox(store) {
 	return queueOf(store)(async () => {
 		const rows = await listOut(store)
 		const taken = []
+		let grabbed = false
 		const next = rows.map((row) => {
-			if (row.status !== "pending") return row
+			if (grabbed || row.status !== "pending") return row
+			grabbed = true
 			const updated = { ...row, status: "taken" }
 			taken.push(updated)
 			return updated
@@ -89,8 +91,12 @@ async function markInbox(store, job, ok, error) {
 			if (job.type === "image") await store.updateItem(job.taskId, { status: "replied", error: "" })
 			return
 		}
-		if (job.type === "image" || job.type === "file") {
+		if (job.type === "image") {
 			await store.updateItem(job.taskId, { status: "shot-failed", error })
+			return
+		}
+		if (job.type === "file") {
+			await store.updateItem(job.taskId, { error })
 			return
 		}
 		await store.updateItem(job.taskId, { status: "failed", error })

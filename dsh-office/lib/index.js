@@ -5,6 +5,14 @@ import { defineTool } from "@deepseek-ai/dsh-tools"
 import { readExcel, writeExcel } from "./excel.js"
 import { ingestExisting, loadIndex, readParsed, resolveDocsRoot, toKb } from "./inbox.js"
 import { registerInbox } from "./inbox-http.js"
+import {
+	hasOfficeWriteCall,
+	lastRoleText,
+	materializeFromTurn,
+	parseOfficeFence,
+	slugName,
+	wantsDocument,
+} from "./materialize.js"
 import { parseJson, resolveInsideWorkspace, sessionCwd } from "./paths.js"
 import { readPpt, writePpt } from "./ppt.js"
 import { readWord, writeWord } from "./word.js"
@@ -218,10 +226,62 @@ export function apply(ctx, config = {}) {
 		},
 	}))
 
-	ctx.inject(["webServer"], (webCtx) => {
-		webCtx.effect(() => {
-			const webServer = webCtx.webServer
-			return webServer === undefined ? () => {} : registerInbox(webServer, { root: docsRoot, kbRoot })
+	const WEB_SERVER_KEYS = ["webServer", "httpServer"]
+	// 0.2.1 前后内测两个通道的服务键曾出现 webServer / httpServer 两种命名（参照生态
+	// dsh-agent-teams 的 WEB_SERVER_KEYS 写法）：惰性探测 + 服务绑定事件重试，服务确实
+	// 缺失时留一条 warn，避免更新后静默丢掉整个工作台 UI。
+	const readWebService = (key) => {
+		try {
+			const viaReflect = ctx.reflect?.get?.(key, false)
+			if (viaReflect !== undefined) return viaReflect
+		} catch {
+			// ignore: 继续用 ctx.get 兜底
+		}
+		try {
+			return ctx.get(key)
+		} catch {
+			return undefined
+		}
+	}
+	let webSurfaceRegistered = false
+	const registerWebSurface = () => {
+		if (webSurfaceRegistered) return
+		const webServer = WEB_SERVER_KEYS.map((key) => readWebService(key)).find((service) => service !== undefined)
+		if (webServer === undefined) return
+		webSurfaceRegistered = true
+		ctx.effect(() => {
+			return registerInbox(webServer, { root: docsRoot, kbRoot })
 		}, "dsh-office.docs-inbox")
+	}
+	registerWebSurface()
+	ctx.on("internal/service", (serviceName) => {
+		if (WEB_SERVER_KEYS.includes(serviceName)) registerWebSurface()
 	})
+	ctx.on("ready", () => {
+		registerWebSurface()
+		if (!webSurfaceRegistered) ctx.logger?.warn?.("[office] 未找到 webServer/httpServer 服务，工作台 UI 未挂载")
+	})
+
+	ctx.on("session/event", async (session, event) => {
+		if (event?.type !== "turn/end") return
+		const reason = event.data?.reason?.kind ?? event.reason?.kind
+		if (reason !== "completed") return
+		const title = String(session?.header?.title ?? session?.title ?? "")
+		if (title.startsWith("微信·")) return
+		if (hasOfficeWriteCall(session)) return
+		const userText = lastRoleText(session, "user")
+		const assistantText = lastRoleText(session, "assistant")
+		if (!wantsDocument(userText) && !parseOfficeFence(assistantText)) return
+		try {
+			await materializeFromTurn({
+				userText,
+				assistantText,
+				destDir: docsRoot,
+				basename: slugName(title || "会话稿"),
+				title: title || undefined,
+			})
+		} catch {
+			/* 落盘失败不挡对话 */
+		}
+	}, { global: true })
 }

@@ -9,24 +9,37 @@ export const SIDECAR_PYTHON = join(SIDECAR_DIR, ".venv", "Scripts", "python.exe"
 export const SIDECAR_SCRIPT = join(SIDECAR_DIR, "listen.py")
 export const SIDECAR_LOG = "D:/dsh-workbench/messenger/sidecar.log"
 
-export function createSidecar(opts = {}) {
-	const python = opts.python ?? SIDECAR_PYTHON
-	const args = opts.args ?? [opts.script ?? SIDECAR_SCRIPT]
-	const cwd = opts.cwd ?? SIDECAR_DIR
-	const logPath = opts.logPath ?? SIDECAR_LOG
+const PROXY_KEYS = /^(https?|all|ftp)_proxy$/i
+
+export function sidecarChildEnv(extra = {}) {
 	const env = {
 		...process.env,
 		PYTHONIOENCODING: "utf-8",
 		PYTHONUTF8: "1",
 		DSH_MESSENGER: "http://127.0.0.1:3080",
 		DSH_WX_CONTACT: "黄山",
+		DSH_WX_CONFIG: "D:/dsh-workbench/messenger/config.json",
 		DSH_WX_DATA_ROOT: "E:\\weixin",
 		DSH_WX_KEYS: "D:\\dsh-workbench\\messenger\\wx-keys.json",
 		DSH_WX_CACHE: "D:\\dsh-workbench\\messenger\\wx-cache",
 		DSH_WX_CURSOR: "D:\\dsh-workbench\\messenger\\wx-cursor.json",
 		DSH_WX_KEYS_ROOT: "D:\\dsh-workbench\\messenger",
-		...opts.env,
+		...extra,
 	}
+	for (const key of Object.keys(env)) {
+		if (PROXY_KEYS.test(key)) delete env[key]
+	}
+	env.NO_PROXY = "127.0.0.1,localhost,::1"
+	env.no_proxy = env.NO_PROXY
+	return env
+}
+
+export function createSidecar(opts = {}) {
+	const python = opts.python ?? SIDECAR_PYTHON
+	const args = opts.args ?? [opts.script ?? SIDECAR_SCRIPT]
+	const cwd = opts.cwd ?? SIDECAR_DIR
+	const logPath = opts.logPath ?? SIDECAR_LOG
+	const env = sidecarChildEnv(opts.env)
 
 	let child = null
 	let log = null

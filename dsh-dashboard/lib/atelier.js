@@ -1,9 +1,9 @@
-import { createApp, ref, computed, onMounted, watch } from "/plugins/dsh-dashboard/vue.esm-browser.js"
+import { createApp, ref, computed, onMounted, watch, nextTick } from "/plugins/dsh-dashboard/vue.esm-browser.js"
 
 const PAGES = {
 	book: { kicker: "Book atelier", title: "书籍转技能", lede: "本地书或检索入册，五段工序、三道人审。做成技能后可装进工作台。" },
 	trail: { kicker: "Trace wall", title: "轨迹", lede: "本会话走过的提示、工具和回合，按时间铺开。不是监控大屏的示意数。" },
-	memory: { kicker: "Memory ledger", title: "记忆", lede: "规则、用户档案、项目关键事实和日志。删除走两步确认，避免误抹一条。" },
+	memory: { kicker: "Memory ledger", title: "记忆", lede: "规则、用户档案、项目关键事实和日志。已入册的可以改写后再保存；删除仍走两步确认。" },
 	skills: { kicker: "Skill atelier", title: "技能", lede: "已装技能和待确认建议。停用不会删文件，只是先不注入对话。" },
 	todos: { kicker: "Duty slips", title: "待办", lede: "生活 / 工作 / 本项目 / 今日四本册子。完成、改写、移除都在这张纸上。" },
 	craft: { kicker: "Craft desk", title: "派活台", lede: "问一问 / 想一想 / 做一做，任务卡、选区改稿、目标挂起。" },
@@ -559,23 +559,41 @@ export function mountAtelier(root) {
 			<div class="card">
 				<h2>{{ current?.title || "记忆" }}</h2>
 				<div class="paper-scroll" tabindex="0" aria-label="记忆条目">
-				<p v-if="!entries.length" class="empty">这条轨还是空的。</p>
-				<article v-for="entry in entries" :key="entry.raw" class="entry">
+				<p v-if="current && current.available === false" class="empty">当前会话没有工作目录，项目关键记忆对不上。</p>
+				<p v-else-if="!entries.length" class="empty">这条轨还是空的。</p>
+				<article v-for="entry in entries" :key="entry.raw" class="entry" :class="{ 'is-editing': editing===entry.raw }">
 					<header>
 						<span class="stamp">{{ entry.time || "未标时" }}</span>
-						<button type="button" class="btn-danger" :class="{ 'is-armed': armed===entry.raw }" @click="remove(entry)">{{ armed===entry.raw ? "确认删除" : "移除" }}</button>
+						<div class="entry-ops">
+							<button v-if="canEdit && editing!==entry.raw" type="button" class="btn-soft" :disabled="busy" @click="startEdit(entry)">改写</button>
+							<button v-if="editing!==entry.raw" type="button" class="btn-danger" :class="{ 'is-armed': armed===entry.raw }" @click="remove(entry)">{{ armed===entry.raw ? "确认删除" : "移除" }}</button>
+						</div>
 					</header>
-					<p>{{ entry.text }}</p>
+					<template v-if="editing===entry.raw">
+						<div class="field">
+							<label>改这一条</label>
+							<textarea class="entry-draft" rows="6" v-model="draft" :disabled="busy" @keydown="onDraftKey"></textarea>
+						</div>
+						<div class="entry-foot">
+							<span class="entry-hint">时间戳和标记不动，只改正文。Ctrl+Enter 保存，Esc 放弃。</span>
+							<button type="button" class="btn-quiet" :disabled="busy" @click="cancelEdit">放弃</button>
+							<button type="button" class="btn-primary" :disabled="busy || !canSave" @click="saveEdit">保存</button>
+						</div>
+					</template>
+					<p v-else>{{ entry.text }}</p>
 				</article>
 				</div>
 			</div>
 		</div>
 		`,
 		setup(props, { emit }) {
+			const EDITABLE = new Set(["memory", "user", "daily", "project", "key"])
 			const files = ref([])
 			const track = ref("key")
 			const fresh = ref("")
 			const armed = ref("")
+			const editing = ref("")
+			const draft = ref("")
 			let armTimer
 			const counts = computed(() => {
 				const map = {}
@@ -583,7 +601,14 @@ export function mountAtelier(root) {
 				return map
 			})
 			const current = computed(() => files.value.find((file) => file.key === track.value))
-			const entries = computed(() => current.value ? parseEntries(current.value) : [])
+			const entries = computed(() => current.value ? parseEntries(current.value).slice().reverse() : [])
+			const canEdit = computed(() => EDITABLE.has(track.value))
+			const editingEntry = computed(() => entries.value.find((entry) => entry.raw === editing.value))
+			const canSave = computed(() => {
+				const text = draft.value.trim()
+				if (!text || text.includes("§")) return false
+				return Boolean(editingEntry.value) && text !== editingEntry.value.text.trim()
+			})
 
 			function setStats() {
 				const all = files.value.flatMap(parseEntries)
@@ -592,7 +617,7 @@ export function mountAtelier(root) {
 					{ id: "key", value: counts.value.key || 0, label: "关键", hint: "KEY.md" },
 					{ id: "daily", value: counts.value.daily || 0, label: "今日", hint: "日志" },
 					{ id: "user", value: counts.value.user || 0, label: "用户", hint: "档案" },
-					{ id: "mem", value: counts.value.memory || 0, label: "长期", hint: "MEMORY" },
+					{ id: "mem", value: counts.value.memory || 0, label: "全局", hint: "MEMORY" },
 				])
 			}
 			async function load() {
@@ -609,6 +634,53 @@ export function mountAtelier(root) {
 					fresh.value = ""
 					await load()
 					emit("toast", "关键事实已入册")
+				} catch (error) { emit("toast", error.message, false) }
+				finally { emit("busy", false) }
+			}
+			function cancelEdit() {
+				editing.value = ""
+				draft.value = ""
+			}
+			function startEdit(entry) {
+				armed.value = ""
+				clearTimeout(armTimer)
+				editing.value = entry.raw
+				draft.value = entry.text
+				nextTick(() => {
+					const box = document.querySelector(".entry.is-editing .entry-draft")
+					if (box) {
+						box.focus()
+						box.setSelectionRange(box.value.length, box.value.length)
+					}
+				})
+			}
+			function onDraftKey(event) {
+				if (event.key === "Escape") {
+					event.preventDefault()
+					cancelEdit()
+					return
+				}
+				if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+					event.preventDefault()
+					if (canSave.value) saveEdit()
+				}
+			}
+			async function saveEdit() {
+				if (!canSave.value || !editingEntry.value) return
+				emit("busy", true)
+				try {
+					await json("/memory-evolve/api/memory/update", {
+						method: "POST",
+						body: JSON.stringify({
+							sessionId: props.session,
+							target: track.value,
+							match: editingEntry.value.raw,
+							content: draft.value.replaceAll("§", "").trim(),
+						}),
+					})
+					cancelEdit()
+					await load()
+					emit("toast", "这一条已改好")
 				} catch (error) { emit("toast", error.message, false) }
 				finally { emit("busy", false) }
 			}
@@ -634,8 +706,15 @@ export function mountAtelier(root) {
 				window.addEventListener("atelier-reload", () => load().catch((error) => emit("toast", error.message, false)))
 			})
 			watch(() => props.session, () => load().catch((error) => emit("toast", error.message, false)))
+			watch(track, cancelEdit)
+			watch(draft, (value) => {
+				if (value.includes("§")) draft.value = value.replaceAll("§", "")
+			})
 
-			return { files, track, fresh, armed, counts, current, entries, addKey, remove }
+			return {
+				files, track, fresh, armed, editing, draft, counts, current, entries,
+				canEdit, canSave, addKey, remove, startEdit, cancelEdit, saveEdit, onDraftKey,
+			}
 		},
 	})
 
@@ -664,14 +743,14 @@ export function mountAtelier(root) {
 					<input v-model="q" class="grow" placeholder="按名或说明筛选"/>
 				</div>
 				<div class="paper-scroll" tabindex="0" aria-label="技能库">
-				<button v-for="skill in shown" :key="skill.name + skill.source" type="button" class="task" :class="skill.disabled ? 'tone-muted' : 'tone-ok'">
+				<article v-for="skill in shown" :key="skill.name + skill.source" class="task" :class="skill.disabled ? 'tone-muted' : 'tone-ok'">
 					<span>
 						<strong>{{ skill.name }}</strong>
 						<em>{{ skill.source }} · {{ skill.disabled ? "已停用" : "注入中" }}</em>
 						<p class="hint" style="margin:8px 0 0">{{ skill.description || skill.whenToUse || "" }}</p>
 					</span>
 					<button type="button" class="btn-soft" :disabled="busy || skill.protected" @click.stop="toggle(skill)">{{ skill.disabled ? "启用" : "停用" }}</button>
-				</button>
+				</article>
 				</div>
 			</section>
 		</div>

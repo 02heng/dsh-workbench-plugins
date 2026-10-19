@@ -50,16 +50,12 @@ const THEME_PREFERENCE_SCHEMA = z.object({ [THEME_FIELD]: z.string().default(DEF
 * application tree; at runtime the real host Context satisfies it.
 */
 /** Optional services this entry consumes. */
-const inject = ["settings"];
+const inject = [];
 /**
-* Host plugin body: register the durable `dsh-themes` namespace into the Host
-* settings service when one is composed, so the settings document accepts and
-* schema-validates the third-party theme selection.
+* Plugin config is the 0.2 settings document for entry `dsh-themes`.
+* The client reads and writes it through `configForms`.
 */
-function apply(ctx) {
-	ctx.inject(["settings"], (settingsCtx) => {
-		settingsCtx.settings.register(THEMES_NAMESPACE, THEME_PREFERENCE_SCHEMA);
-	});
-}
+const Config = THEME_PREFERENCE_SCHEMA;
+function apply() {}
 //#endregion
-export { apply, inject };
+export { apply, Config, inject };

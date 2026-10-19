@@ -10,6 +10,11 @@ CREATE_NEW_CONSOLE = 0x00000010
 OFFICE_EXTS = {".docx", ".xlsx", ".pdf"}
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".bmp"}
 ZIP_EXTS = {".zip", ".7z", ".rar", ".tar", ".gz"}
+SEND_PAUSE = 0.3
+
+
+def pace():
+    time.sleep(SEND_PAUSE)
 
 
 class SendError(RuntimeError):
@@ -87,7 +92,8 @@ def score_window(row):
     if "Qt" in cls:
         score += 1000
     if row.get("visible"):
-        score += 500
+        # 可见窗口必须压过任何隐藏的幽灵窗口，否则点击会打进看不见的窗口
+        score += 100_000_000
     if row.get("iconic"):
         score += 100
     if width >= 800 and height >= 600:
@@ -159,24 +165,164 @@ def list_windows():
     return rows
 
 
-def _show(hwnd):
+TRAY_WX = "微信收在托盘里，唤不出主窗，没法发送。请把微信主窗口打开一次再试。"
+
+
+def is_tray_hidden(row):
+    if not row:
+        return True
+    if row.get("iconic"):
+        return False
+    if not row.get("visible"):
+        return True
+    return int(row.get("w") or 0) < 400 or int(row.get("h") or 0) < 300
+
+
+def _window_row(hwnd):
+    for row in list_windows():
+        if int(row.get("hwnd") or 0) == int(hwnd):
+            return row
+    return {"hwnd": hwnd, "visible": False, "iconic": False, "w": 0, "h": 0}
+
+
+def _click_tray_weixin():
+    names = ("微信", "Weixin", "WeChat")
+    if _click_tray_uia(names):
+        return True
+    return _click_tray_overflow_then_icon(names)
+
+
+def _click_tray_uia(names):
+    try:
+        import uiautomation as auto
+        import win32gui
+    except Exception:
+        return False
+    overflow_names = ("显示隐藏的图标", "Show hidden icons", "通知折叠")
+    try:
+        for title in overflow_names:
+            btn = auto.ButtonControl(Name=title, searchDepth=8)
+            if btn.Exists(0.2):
+                btn.Click()
+                time.sleep(0.35)
+                break
+        handles = []
+        for cls in (
+            "NotifyIconOverflowWindow",
+            "TopLevelWindowForOverflowXamlIsland",
+            "Shell_TrayWnd",
+        ):
+            hwnd = win32gui.FindWindow(cls, None)
+            if hwnd:
+                handles.append(hwnd)
+        roots = []
+        for hwnd in handles:
+            try:
+                roots.append(auto.ControlFromHandle(int(hwnd)))
+            except Exception:
+                continue
+        for root in roots:
+            if _click_named_weixin(root, names, depth=0):
+                time.sleep(0.4)
+                return True
+    except Exception:
+        return False
+    return False
+
+
+def _click_named_weixin(ctrl, names, depth):
+    if depth > 8 or ctrl is None:
+        return False
+    try:
+        name = str(ctrl.Name or "")
+        ctype = str(ctrl.ControlTypeName or "")
+        if any(token in name for token in names) and ctype in (
+            "ButtonControl",
+            "ListItemControl",
+            "MenuItemControl",
+            "PaneControl",
+            "TextControl",
+        ):
+            ctrl.Click()
+            return True
+        for child in ctrl.GetChildren():
+            if _click_named_weixin(child, names, depth + 1):
+                return True
+    except Exception:
+        return False
+    return False
+
+
+def _click_tray_overflow_then_icon(names):
+    # 找不到托盘图标就停，绝不 ShowWindow 硬拉隐藏主窗
+    return False
+
+
+def _focus_visible(hwnd):
+    import win32api
+    import win32con
+    import win32gui
+    import win32process
+
+    hwnd = int(hwnd)
+    cur_tid = win32api.GetCurrentThreadId()
+    fg = win32gui.GetForegroundWindow()
+    fg_tid = win32process.GetWindowThreadProcessId(fg)[0] if fg else 0
+    tgt_tid = win32process.GetWindowThreadProcessId(hwnd)[0]
+    attached = []
+    try:
+        for tid in (fg_tid, tgt_tid):
+            if tid and tid != cur_tid:
+                if ctypes.windll.user32.AttachThreadInput(cur_tid, tid, True):
+                    attached.append(tid)
+        win32api.keybd_event(win32con.VK_MENU, 0, 0, 0)
+        try:
+            win32gui.BringWindowToTop(hwnd)
+            win32gui.SetForegroundWindow(hwnd)
+        except Exception:
+            pass
+        finally:
+            win32api.keybd_event(win32con.VK_MENU, 0, win32con.KEYEVENTF_KEYUP, 0)
+    finally:
+        for tid in attached:
+            ctypes.windll.user32.AttachThreadInput(cur_tid, tid, False)
+
+
+def _wake(hwnd, row=None):
     import win32con
     import win32gui
 
-    if (not win32gui.IsWindowVisible(hwnd)) or win32gui.IsIconic(hwnd) or _is_offscreen(hwnd):
+    row = row or _window_row(hwnd)
+    if is_tray_hidden(row):
+        _click_tray_weixin()
+        return
+    if row.get("iconic"):
         try:
-            win32gui.ShowWindow(hwnd, win32con.SW_SHOW)
+            win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
         except Exception:
             pass
-        win32gui.PostMessage(hwnd, win32con.WM_SYSCOMMAND, win32con.SC_RESTORE, 0)
-        time.sleep(0.7)
+    _focus_visible(hwnd)
+
+
+def _window_ready(hwnd):
+    import win32gui
+
     try:
-        win32gui.ShowWindow(hwnd, win32con.SW_SHOWNORMAL)
-        win32gui.SetWindowPos(hwnd, win32con.HWND_TOPMOST, 0, 0, 0, 0, 3)
+        return bool(win32gui.IsWindowVisible(hwnd)) and not win32gui.IsIconic(hwnd) and not _is_offscreen(hwnd)
     except Exception:
-        pass
-    ctypes.windll.user32.SwitchToThisWindow(ctypes.c_void_p(int(hwnd)), ctypes.c_int(1))
-    time.sleep(0.25)
+        return False
+
+
+def _show(hwnd, timeout=8):
+    deadline = time.time() + timeout
+    while True:
+        if _window_ready(hwnd) and _hwnd_foreground(hwnd):
+            time.sleep(0.2)
+            return
+        if time.time() >= deadline:
+            raise SendError(TRAY_WX)
+        _wake(hwnd)
+        time.sleep(0.6)
 
 
 def _focus(hwnd):
@@ -187,6 +333,20 @@ def _is_offscreen(hwnd):
     import win32gui
     left, top, right, bottom = win32gui.GetWindowRect(hwnd)
     return right - left < 400 or bottom - top < 300 or left < -10000
+
+
+def _hwnd_foreground(hwnd):
+    try:
+        import win32gui
+        fg = win32gui.GetForegroundWindow()
+        if not fg:
+            return False
+        if int(fg) == int(hwnd):
+            return True
+        root = win32gui.GetAncestor(fg, 2)
+        return int(root) == int(hwnd)
+    except Exception:
+        return False
 
 
 def _foreground_is_weixin():
@@ -234,6 +394,14 @@ def file_button_point(width, height):
 def screenshot_button_point(width, height):
     x, y = file_button_point(width, height)
     return x + 40, y
+
+
+def send_button_point(width, height):
+    width = int(width)
+    height = int(height)
+    if width < 400 or height < 300:
+        raise SendError("微信窗口太小，点不到发送")
+    return width - 52, height - 28
 
 
 def pack_hdrop(paths):
@@ -294,10 +462,8 @@ def _click_input(hwnd):
     import win32gui
 
     left, top, right, bottom = win32gui.GetClientRect(hwnd)
-    width, height = right - left, bottom - top
-    for from_bottom in (48, 64, 80, 96):
-        x, y = input_box_point(width, height, from_bottom)
-        _click_client_point(hwnd, x, y)
+    x, y = input_box_point(right - left, bottom - top, 48)
+    _click_client_point(hwnd, x, y)
 
 
 def _click_file_button(hwnd):
@@ -313,6 +479,14 @@ def _click_screenshot_button(hwnd):
 
     left, top, right, bottom = win32gui.GetClientRect(hwnd)
     x, y = screenshot_button_point(right - left, bottom - top)
+    _click_client_point(hwnd, x, y)
+
+
+def _click_send(hwnd):
+    import win32gui
+
+    left, top, right, bottom = win32gui.GetClientRect(hwnd)
+    x, y = send_button_point(right - left, bottom - top)
     _click_client_point(hwnd, x, y)
 
 
@@ -399,30 +573,17 @@ def _hotkey(mods, vk):
 def _send_keys_to_edit(hwnd, keys):
     import win32con
 
-    mapping = {"ctrl+a": "{Ctrl}a", "ctrl+v": "{Ctrl}v", "enter": "{Enter}"}
-    try:
-        import uiautomation as auto
-        for key in keys:
-            auto.SendKeys(mapping[key], waitTime=0.05)
-        return
-    except Exception:
-        pass
+    if not _hwnd_foreground(hwnd):
+        _wake(hwnd)
+        time.sleep(0.2)
+    if not _hwnd_foreground(hwnd):
+        raise SendError("按键前微信不在前台，会发到别的窗口")
     for key in keys:
         if key == "ctrl+a":
-            _post_key(hwnd, win32con.VK_CONTROL, True)
-            _post_key(hwnd, ord("A"), True)
-            _post_key(hwnd, ord("A"), False)
-            _post_key(hwnd, win32con.VK_CONTROL, False)
             _hotkey([win32con.VK_CONTROL], ord("A"))
         elif key == "ctrl+v":
-            _post_key(hwnd, win32con.VK_CONTROL, True)
-            _post_key(hwnd, ord("V"), True)
-            _post_key(hwnd, ord("V"), False)
-            _post_key(hwnd, win32con.VK_CONTROL, False)
             _hotkey([win32con.VK_CONTROL], ord("V"))
         elif key == "enter":
-            _post_key(hwnd, win32con.VK_RETURN, True)
-            _post_key(hwnd, win32con.VK_RETURN, False)
             _hotkey([], win32con.VK_RETURN)
         time.sleep(0.05)
 
@@ -476,29 +637,17 @@ def _paste_into_edit(hwnd):
     import win32con
     import win32gui
 
-    try:
-        win32gui.SetWindowPos(hwnd, win32con.HWND_TOPMOST, 0, 0, 0, 0, 3)
-    except Exception:
-        pass
     _click_input(hwnd)
-    try:
-        import uiautomation as auto
-        auto.SendKeys("{Tab}", waitTime=0.08)
-    except Exception:
-        pass
-    _send_keys_to_edit(hwnd, ["ctrl+a"])
-    time.sleep(0.12)
+    pace()
     _send_keys_to_edit(hwnd, ["ctrl+v"])
     try:
         win32gui.PostMessage(hwnd, win32con.WM_PASTE, 0, 0)
     except Exception:
         pass
     time.sleep(0.45)
+    pace()
     _send_keys_to_edit(hwnd, ["enter"])
-    try:
-        win32gui.SetWindowPos(hwnd, win32con.HWND_NOTOPMOST, 0, 0, 0, 0, 3)
-    except Exception:
-        pass
+    pace()
 
 
 def shot_confirm_from_image(img, x2, y2):
@@ -623,26 +772,114 @@ def _set_dialog_path(dlg, path):
     time.sleep(0.4)
 
 
+def _close_open_dialogs():
+    import win32con
+    import win32gui
+
+    for _unused in range(4):
+        dlg = _find_open_dialog(0.05)
+        if not dlg:
+            return
+        try:
+            win32gui.PostMessage(dlg, win32con.WM_CLOSE, 0, 0)
+        except Exception:
+            pass
+        _hotkey([], win32con.VK_ESCAPE)
+        time.sleep(0.25)
+
+
+def _wait_dialog_gone(timeout=4):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if _find_open_dialog(0.05) is None:
+            return True
+        time.sleep(0.1)
+    return False
+
+
+def _press_send(hwnd):
+    _click_input(hwnd)
+    pace()
+    _send_keys_to_edit(hwnd, ["enter"])
+    pace()
+
+
 def _send_via_file_dialog(hwnd, path):
-    dlg = _find_open_dialog(0.2)
-    if not dlg:
-        _click_file_button(hwnd)
-        dlg = _find_open_dialog(4)
+    if not _hwnd_foreground(hwnd):
+        _wake(hwnd)
+        time.sleep(0.3)
+    _close_open_dialogs()
+    _click_file_button(hwnd)
+    dlg = _find_open_dialog(4)
     if not dlg:
         raise SendError("没有出现微信选文件框")
     _set_dialog_path(dlg, path)
-    time.sleep(0.4)
-    _send_keys_to_edit(hwnd, ["enter"])
+    if not _wait_dialog_gone(4):
+        _close_open_dialogs()
+        raise SendError("微信选文件框没有关掉")
+    pace()
+    _press_send(hwnd)
 
 
-def open_contact(contact=None):
+def open_contact(contact=None, timeout=10):
     contact = contact or CONTACT
     assert_can_drive_weixin()
-    hit = pick_main_window(list_windows())
-    if not hit:
-        raise SendError("找不到微信主窗")
-    _show(hit["hwnd"])
-    return open_ok(contact, contact)
+    deadline = time.time() + timeout
+    woke = False
+    hit = None
+    while True:
+        # 托盘唤醒可能换出新的主窗句柄，每一轮都重新找一遍
+        hit = pick_main_window(list_windows())
+        if hit and _window_ready(hit["hwnd"]) and _hwnd_foreground(hit["hwnd"]):
+            # 刚从托盘唤出来的窗口界面还没画完，点早了会丢点击
+            time.sleep(1.2 if woke else 0.2)
+            open_ok(contact, contact)
+            return hit
+        if time.time() >= deadline:
+            raise SendError(TRAY_WX if hit else "找不到微信主窗")
+        if hit:
+            _wake(hit["hwnd"], hit)
+            woke = True
+        time.sleep(0.6)
+
+
+def _open_inbox(contact):
+    try:
+        from weixin_inbox import WeixinInbox
+        return WeixinInbox(contact).bind()
+    except Exception:
+        return None
+
+
+def _paste_and_confirm(hwnd, contact, file_path=None):
+    box = _open_inbox(contact)
+    if box is None:
+        raise SendError("没法核对微信是否发出，未发送")
+    try:
+        before = box.latest_seq()
+    except Exception as exc:
+        raise SendError(f"没法核对微信是否发出，未发送：{exc}") from exc
+    _paste_into_edit(hwnd)
+    for attempt in range(3):
+        if box.wait_new(before, timeout=12):
+            return True
+        if file_path and attempt >= 1:
+            _send_via_file_dialog(hwnd, file_path)
+        else:
+            _click_input(hwnd)
+            pace()
+            _send_keys_to_edit(hwnd, ["enter"])
+            pace()
+            _click_send(hwnd)
+            pace()
+    raise SendError("内容粘进了输入框但没送出去，微信没收到")
+
+
+def _must_drop_integrity():
+    try:
+        return is_elevated_sid(integrity_sid(os.getpid()))
+    except Exception:
+        return False
 
 
 def _as_child():
@@ -726,28 +963,22 @@ def _spawn(args):
 
 def send_text(text, contact=None):
     contact = contact or CONTACT
-    if not _as_child():
+    if not _as_child() and _must_drop_integrity():
         return _spawn(["--text", text or "", "--to", contact])
-    open_contact(contact)
-    hit = pick_main_window(list_windows())
-    if not hit:
-        raise SendError("找不到微信主窗")
+    hit = open_contact(contact)
     _clip_text(text or "")
-    _paste_into_edit(hit["hwnd"])
+    _paste_and_confirm(hit["hwnd"], contact)
     return True
 
 
 def send_screenshot(contact=None, text=""):
     contact = contact or CONTACT
-    if not _as_child():
+    if not _as_child() and _must_drop_integrity():
         args = ["--shot", "--to", contact]
         if text:
             args.extend(["--text", text])
         return _spawn(args)
-    open_contact(contact)
-    hit = pick_main_window(list_windows())
-    if not hit:
-        raise SendError("找不到微信主窗")
+    hit = open_contact(contact)
     import win32con
     _hotkey([], win32con.VK_ESCAPE)
     time.sleep(0.2)
@@ -755,9 +986,11 @@ def send_screenshot(contact=None, text=""):
     time.sleep(0.25)
     dest = os.path.join(r"D:\dsh-workbench\messenger\shots", "wx-live.png")
     _save_clipboard_image(dest)
-    _send_via_file_dialog(hit["hwnd"], dest)
+    set_clipboard_files([dest])
+    _paste_and_confirm(hit["hwnd"], contact, file_path=dest)
     if text:
         time.sleep(0.5)
+        pace()
         os.environ["DSH_WX_SEND_CHILD"] = "1"
         send_text(text, contact)
     return True
@@ -766,21 +999,18 @@ def send_screenshot(contact=None, text=""):
 def send_file(path, text="", contact=None):
     contact = contact or CONTACT
     path = os.path.abspath(path)
-    ext = assert_sendable(path)
-    if ext in IMAGE_EXTS:
-        return send_screenshot(contact, text)
-    if not _as_child():
+    assert_sendable(path)
+    if not _as_child() and _must_drop_integrity():
         args = ["--file", path, "--to", contact]
         if text:
             args.extend(["--text", text])
         return _spawn(args)
-    open_contact(contact)
-    hit = pick_main_window(list_windows())
-    if not hit:
-        raise SendError("找不到微信主窗")
-    _send_via_file_dialog(hit["hwnd"], path)
+    hit = open_contact(contact)
+    set_clipboard_files([path])
+    _paste_and_confirm(hit["hwnd"], contact, file_path=path)
     if text:
         time.sleep(0.5)
+        pace()
         os.environ["DSH_WX_SEND_CHILD"] = "1"
         send_text(text, contact)
     return True
