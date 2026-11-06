@@ -18,3 +18,16 @@ wx-cache/
 _test-*/
 coverage/
 .turbo/
+
+# 运行期数据 / 本机状态（不进 git）
+*.jsonl
+state.json
+hash-index.json
+mailbox.json
+ledger.json
+last-run*.json
+reported.json
+Cookies.bak*
+*.lock
+*.verify.jsonl
+待确认/

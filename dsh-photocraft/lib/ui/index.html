@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="color-scheme" content="dark" />
+<title>PhotoCraft · 修图工作台</title>
+<link rel="stylesheet" href="/plugins/dsh-photocraft/style.css" />
+</head>
+<body>
+<div class="aurora" aria-hidden="true"></div>
+
+<main class="shell">
+	<header class="topbar">
+		<div class="brand">
+			<span class="brand-mark" aria-hidden="true"><i></i></span>
+			<div class="brand-text">
+				<h1>PhotoCraft<span class="brand-split">·</span><span class="brand-sub">修图工作台</span></h1>
+				<p class="brand-desc">批量去豆包水印 · 一键抠图 · 画笔按图还原</p>
+			</div>
+		</div>
+		<div class="status" id="status">
+			<span class="pill" id="cli-pill"><i class="pill-dot"></i><span id="cli-text">检测 CLI…</span></span>
+			<span class="pill" id="py-pill"><i class="pill-dot"></i><span id="py-text">检测 Python…</span></span>
+		</div>
+	</header>
+
+	<section class="step">
+		<div class="step-head">
+			<span class="step-no">01</span>
+			<h2>放入图片</h2>
+			<span class="step-hint">拖入、点击选择，或直接 Ctrl+V 粘贴</span>
+		</div>
+		<div class="drop" id="drop" role="button" tabindex="0" aria-label="选择或拖入图片">
+			<input type="file" id="picker" accept="image/*" multiple hidden />
+			<span class="drop-plus" aria-hidden="true"></span>
+			<p class="drop-title">拖入图片到这里</p>
+			<p class="drop-sub">PNG / JPG / WEBP / BMP / TIFF / PSD · 单张 ≤ 40MB</p>
+		</div>
+		<div class="thumbs" id="thumbs" hidden></div>
+	</section>
+
+	<section class="step">
+		<div class="step-head">
+			<span class="step-no">02</span>
+			<h2>选择功能</h2>
+			<span class="step-hint">三张卡片各带自己的参数</span>
+		</div>
+		<div class="kinds" id="kinds">
+			<article class="kind is-active" data-kind="dewatermark" role="button" tabindex="0" aria-pressed="true">
+				<header class="kind-head">
+					<span class="kind-icon">◐</span>
+					<div class="kind-title">
+						<h3>去水印</h3>
+						<p>自动定位右下角 AI 水印，内容感知填充补回背景</p>
+					</div>
+				</header>
+				<div class="fields">
+					<label class="field">
+						<span class="field-label">检测区域</span>
+						<select name="region">
+							<option value="auto">自动（右下优先）</option>
+							<option value="bottom-right">右下角</option>
+							<option value="bottom-left">左下角</option>
+							<option value="bottom-band">底部整条</option>
+						</select>
+					</label>
+					<label class="field">
+						<span class="field-label">外扩像素 <b data-out="padding">4</b> px</span>
+						<input type="range" name="padding" min="0" max="24" step="1" value="4" data-out="padding" />
+					</label>
+					<label class="field">
+						<span class="field-label">补全方式</span>
+						<select name="method">
+							<option value="fill">内容感知填充（推荐）</option>
+							<option value="contentAware">内容感知填充（备用）</option>
+							<option value="patch">邻域补丁</option>
+							<option value="crop">裁掉水印区域</option>
+						</select>
+					</label>
+					<label class="field">
+						<span class="field-label">未检测到时</span>
+						<select name="onMiss">
+							<option value="skip">跳过该图</option>
+							<option value="corner">按右下角兜底</option>
+							<option value="fail">标记失败</option>
+						</select>
+					</label>
+					<label class="field">
+						<span class="field-label">输出格式</span>
+						<select name="format">
+							<option value="png">PNG（无损）</option>
+							<option value="jpg">JPG</option>
+							<option value="webp">WEBP</option>
+						</select>
+					</label>
+				</div>
+			</article>
+
+			<article class="kind" data-kind="cutout" role="button" tabindex="0" aria-pressed="false">
+				<header class="kind-head">
+					<span class="kind-icon">◇</span>
+					<div class="kind-title">
+						<h3>一键抠图</h3>
+						<p>主体识别 + 图层透明化，输出带 alpha 的 PNG</p>
+					</div>
+				</header>
+				<div class="fields">
+					<label class="toggle">
+						<span class="toggle-text">边缘细化<b>发丝级 refine</b></span>
+						<input type="checkbox" name="refine" checked />
+						<span class="track" aria-hidden="true"></span>
+					</label>
+					<label class="toggle">
+						<span class="toggle-text">去色边<b>defringe / 去白边</b></span>
+						<input type="checkbox" name="decontaminate" checked />
+						<span class="track" aria-hidden="true"></span>
+					</label>
+					<label class="toggle">
+						<span class="toggle-text">裁掉透明边<b>trim transparent</b></span>
+						<input type="checkbox" name="trim" />
+						<span class="track" aria-hidden="true"></span>
+					</label>
+					<label class="field">
+						<span class="field-label">输出格式</span>
+						<select name="format">
+							<option value="png">PNG（带透明）</option>
+							<option value="webp">WEBP（带透明）</option>
+						</select>
+					</label>
+				</div>
+			</article>
+
+			<article class="kind" data-kind="paint" role="button" tabindex="0" aria-pressed="false">
+				<header class="kind-head">
+					<span class="kind-icon">✎</span>
+					<div class="kind-title">
+						<h3>画笔还原</h3>
+						<p>提取颜色与走向，用真实笔触一层层画出来</p>
+					</div>
+				</header>
+				<div class="fields">
+					<label class="field">
+						<span class="field-label">风格</span>
+						<select name="style">
+							<option value="impressionist">印象派笔触</option>
+							<option value="pointillist">点彩</option>
+							<option value="crosshatch">交叉排线</option>
+							<option value="ink">墨线（暗部）</option>
+							<option value="pencil">铅笔素描</option>
+							<option value="flat">平涂色块</option>
+						</select>
+					</label>
+					<label class="field">
+						<span class="field-label">笔刷大小 <b data-out="brushSize">24</b> px</span>
+						<input type="range" name="brushSize" min="4" max="80" step="1" value="24" data-out="brushSize" />
+					</label>
+					<label class="field">
+						<span class="field-label">密度 <b data-out="density">1.0</b>×</span>
+						<input type="range" name="density" min="0.2" max="2" step="0.1" value="1" data-out="density" />
+					</label>
+					<label class="field">
+						<span class="field-label">遍数 <b data-out="passes">2</b></span>
+						<input type="range" name="passes" min="1" max="4" step="1" value="2" data-out="passes" />
+					</label>
+					<label class="field">
+						<span class="field-label">抖动 <b data-out="jitter">0.35</b></span>
+						<input type="range" name="jitter" min="0" max="1" step="0.05" value="0.35" data-out="jitter" />
+					</label>
+					<label class="field field-inline">
+						<span class="field-label">随机种子</span>
+						<input type="number" name="seed" min="0" max="4294967295" step="1" value="7" />
+					</label>
+					<label class="field field-inline">
+						<span class="field-label">最多笔触</span>
+						<input type="number" name="maxStrokes" min="100" max="20000" step="100" value="4000" />
+					</label>
+					<label class="toggle">
+						<span class="toggle-text">保留参考层<b>输出带参考图的 PSD</b></span>
+						<input type="checkbox" name="keepReference" />
+						<span class="track" aria-hidden="true"></span>
+					</label>
+					<label class="field">
+						<span class="field-label">输出格式</span>
+						<select name="format">
+							<option value="png">PNG</option>
+							<option value="psd">PSD（保图层）</option>
+						</select>
+					</label>
+				</div>
+			</article>
+		</div>
+	</section>
+
+	<section class="step">
+		<div class="step-head">
+			<span class="step-no">03</span>
+			<h2>运行</h2>
+			<span class="step-hint">后台执行，可继续浏览</span>
+		</div>
+		<div class="runbar">
+			<button class="btn btn-primary" id="run" type="button" disabled>开始处理</button>
+			<button class="btn btn-ghost" id="cancel" type="button" hidden>取消</button>
+			<button class="btn btn-ghost" id="clear" type="button">清空图片</button>
+			<span class="runbar-meta" id="runmeta">还没有选择图片</span>
+		</div>
+		<div class="progress" id="progress" hidden>
+			<div class="progress-head">
+				<span id="progress-label">处理中…</span>
+				<span id="progress-pct">0%</span>
+			</div>
+			<div class="bar"><i id="progress-fill"></i></div>
+			<div class="progress-note" id="progress-note"></div>
+		</div>
+	</section>
+
+	<section class="step" id="results-step" hidden>
+		<div class="step-head">
+			<span class="step-no">04</span>
+			<h2>结果</h2>
+			<span class="step-hint" id="results-hint"></span>
+		</div>
+		<div class="results" id="results"></div>
+		<div class="outdir">
+			<span class="outdir-label">输出目录</span>
+			<code id="outdir-path">—</code>
+			<button class="btn btn-small" id="open-dir" type="button">打开目录</button>
+		</div>
+	</section>
+
+	<footer class="foot">
+		<span>PhotoCraft 0.10 · 数据只在本机处理，不上传云端</span>
+	</footer>
+</main>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+<script type="module" src="/plugins/dsh-photocraft/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,4 @@
+# dsh-mailbox bundle patch: 把插件插进 profile 的插件树。
+- insert:
+    - id: mailbox
+      name: dsh-mailbox

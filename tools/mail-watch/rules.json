@@ -1,0 +1,32 @@
+{
+  "_comment": "分流规则。判定顺序：①附件名里的 strongKeywords（最可靠）②邮件主题的 strongKeywords ③confirmKeywords → 待确认 ④附件名 keywords ⑤主题 keywords。strongKeywords 用来压过泛词（避免「课间一刻钟…附件1 联系人信息表」被「信息表」误判进千问目录）。",
+  "categories": [
+    {
+      "id": "kejian",
+      "label": "AI课件/课例/课间一刻钟 → 课件15分钟",
+      "dir": "E:\\桌面\\办公文件\\办公文档\\2026年\\10月\\课件15分钟\\01_学校回交案例",
+      "priority": 90,
+      "strongKeywords": ["课间一刻钟", "课例", "课件", "应用案例", "教学案例", "教学设计", "课堂实录"],
+      "keywords": ["案例", "一刻钟", "AI应用"]
+    },
+    {
+      "id": "qianwen",
+      "label": "试用人员信息表 → 千问账号发送",
+      "dir": "E:\\桌面\\办公文件\\办公文档\\2026年\\10月\\千问账号发送\\01_学校回交件",
+      "priority": 50,
+      "strongKeywords": ["试用人员信息表", "试用人员信息", "人员信息表"],
+      "keywords": ["试用人员", "信息表", "人员信息"]
+    }
+  ],
+  "expired": [
+    {
+      "id": "cwmz",
+      "label": "创想微造（活动已于 2026-10-27 截止，不再收集）",
+      "dir": "E:\\桌面\\办公文件\\办公文档\\2026年\\10月\\创想微造实践\\_已截止_20261103",
+      "strongKeywords": ["创想微造"],
+      "keywords": ["教师信息表", "工作室申报表"]
+    }
+  ],
+  "confirmKeywords": ["申报表", "工作室", "课题", "合同", "发票"],
+  "unknownDir": "D:\\dsh-workbench\\mail\\126\\待确认"
+}

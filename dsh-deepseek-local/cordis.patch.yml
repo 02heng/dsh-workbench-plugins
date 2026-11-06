@@ -1,0 +1,7 @@
+- insert:
+    - id: deepseek-local-llm
+      name: dsh-deepseek-local
+      config:
+        apiKeyEnv: DEEPSEEK_LOCAL_API_KEY
+        baseURL: http://127.0.0.1:8765/v1
+        provider: deepseek-local

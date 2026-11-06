@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>邮箱收件台 · dsh-mailbox</title>
+<link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+<header class="top">
+  <div>
+    <h1>邮箱收件台</h1>
+    <p class="sub">IMAP 收信 → 解压 → 按学校/通知落盘 → 台账与缺件清单</p>
+  </div>
+  <div class="badges">
+    <span id="badge-config" class="badge">未配置</span>
+    <span id="badge-schedule" class="badge ghost">定时：—</span>
+  </div>
+</header>
+
+<section class="grid" id="cards">
+  <div class="card"><span class="k">邮箱</span><strong id="card-mail">—</strong></div>
+  <div class="card"><span class="k">通知规则</span><strong id="card-rules">—</strong></div>
+  <div class="card"><span class="k">待整理邮件</span><strong id="card-pending">—</strong></div>
+  <div class="card"><span class="k">上次收取</span><strong id="card-last">—</strong></div>
+</section>
+
+<section class="panel">
+  <h2>邮箱连接 <small>授权码只写本机 config，不进对话与记忆</small></h2>
+  <div class="form">
+    <label>邮箱地址<input id="address" placeholder="zhjyfzcjzx3@126.com" /></label>
+    <label>授权码<input id="password" type="password" placeholder="留空表示不修改" autocomplete="new-password" /></label>
+    <label>IMAP 服务器<input id="imapHost" placeholder="imap.126.com" /></label>
+    <label>IMAP 端口<input id="imapPort" type="number" placeholder="993" /></label>
+    <label>SMTP 服务器<input id="smtpHost" placeholder="smtp.126.com" /></label>
+    <label>SMTP 端口<input id="smtpPort" type="number" placeholder="465" /></label>
+  </div>
+  <div class="row">
+    <button class="primary" id="btn-save">保存配置</button>
+    <button id="btn-test">测试连接</button>
+    <span class="hint">126 邮箱：网页版设置 → POP3/SMTP/IMAP → 开启 IMAP 并生成「客户端授权码」。</span>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>落盘与命名</h2>
+  <div class="form wide">
+    <label>归档根目录<input id="archiveRoot" placeholder="E:/桌面/办公文件/办公文档/2026年/10月" /></label>
+    <label>单件命名口径<input id="namingTemplate" placeholder="{学校}－{姓名}－{学段}－{学科}－{课例名称}" /></label>
+    <label>未匹配邮件去向<input id="fallbackTarget" placeholder="inbox/待人工" /></label>
+    <label>定时收信（逗号分隔）<input id="scheduleTimes" placeholder="08:30，17:00" /></label>
+  </div>
+  <div class="row">
+    <button id="btn-save-paths">保存</button>
+    <span class="hint">规则目录留空时，自动用「归档根目录/通知名」。</span>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>通知规则 <small>关键词命中即归档到对应目录</small></h2>
+  <div class="table-wrap">
+    <table id="rules-table">
+      <thead><tr><th>规则名</th><th>关键词（逗号分隔）</th><th>落盘目录</th><th>按学校分</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <div class="row">
+    <button id="btn-add-rule">+ 新增规则</button>
+    <button class="primary" id="btn-save-rules">保存规则</button>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>操作</h2>
+  <div class="row wrap">
+    <button id="btn-scan">收信扫描</button>
+    <button id="btn-process">整理归档</button>
+    <button id="btn-dry">预览整理</button>
+    <button class="primary" id="btn-run">一键收取</button>
+    <button id="btn-ledger">查看台账</button>
+    <button id="btn-selftest">离线自检</button>
+    <button id="btn-logs">运行日志</button>
+  </div>
+  <pre id="log" class="log">就绪。</pre>
+</section>
+
+<section class="panel">
+  <h2>收件台账</h2>
+  <div id="ledger" class="table-wrap"><p class="hint">点「查看台账」加载本月记录。</p></div>
+</section>
+
+<script src="./app.js"></script>
+</body>
+</html>

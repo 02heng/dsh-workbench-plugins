@@ -17,7 +17,21 @@
 | `dsh-cursor-delegate` | 把编码任务派给 Cursor Agent |
 | `dsh-themes-ui` | 工作台主题 |
 | `dsh-work-ui` | 共用纸感样式和热更新 |
+| `dsh-deepseek-local` | 本地模型网关（OpenAI 兼容端点）适配器 |
+| `dsh-local-presets` | 本机 profile 预设（patch 片段） |
+| `dsh-mailbox` | 126/QQ 邮箱侧栏：收信、取附件、归档、发信 |
+| `dsh-photocraft` | 图片处理（抠图 / 扩图 / 去水印烘焙） |
+| `dsh-pilot` | 桌面自动化（UIA / SendKeys 覆盖层） |
+| `dsh-edge-smoke` | Edge 冒烟测试脚本 |
 | `mcp-server-memory` | 本机 memory MCP |
+
+## 工具（非插件）
+
+| 目录 | 作用 |
+|---|---|
+| `tools/ego-browser-mcp` | ego lite 浏览器的 MCP 封装（零依赖 stdio，9 个工具） |
+| `tools/mail-watch` | 126 邮箱自动收件：`collect.mjs`（分流+判重+QQ 超大附件+百度网盘）→ `review3.mjs`（解包体检）→ `make_xlsx.py`（一类材料一张汇总表） |
+| `tools/scripts` | `dsh-cookie-guard.py`（DSH 鉴权 Cookie 累积清理）、公文/通知生成脚本 |
 
 装进 profile：
 

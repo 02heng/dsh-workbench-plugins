@@ -1,0 +1,11 @@
+{
+  "name": "dsh-local-presets",
+  "version": "0.1.0",
+  "private": true,
+  "description": "工作模式与 Cursor 模式，从 0.1 的 .agent-presets 迁到 0.2 声明式 preset。",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

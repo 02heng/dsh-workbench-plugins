@@ -1,0 +1,39 @@
+{
+  "name": "dsh-mailbox",
+  "version": "0.1.0",
+  "private": false,
+  "description": "邮箱自动收取与归档：IMAP 收信 → 解压 → 规范化命名 → 按学校/通知落盘 → 收件台账与缺件清单，附网页工作台与批量发信。",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js"
+  },
+  "files": [
+    "lib",
+    "sidecar",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "keywords": [
+    "dsh-plugin",
+    "mailbox",
+    "imap",
+    "archive"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-slots"
+      ]
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-tools": "*",
+    "@deepseek-ai/schemastery": "*"
+  }
+}
