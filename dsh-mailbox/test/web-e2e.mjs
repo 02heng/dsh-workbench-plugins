@@ -72,7 +72,7 @@ await check("GET /api/status 走真实 HTTP", async () => {
   const data = await res.json();
   assert.equal(res.status, 200);
   assert.equal(data.ok, true);
-  assert.equal(data.status.address, "zhjyfzcjzx3@126.com");
+  assert.equal(data.status.address, "example@126.com");
 });
 
 await check("POST /api/config 同源写入成功", async () => {
