@@ -184,7 +184,7 @@ await check("POST /api/config 保存规则与路径并能回读", async () => {
   assert.equal(read.data.config.rules[0].id, "rule-e2e");
   assert.deepEqual(read.data.config.rules[0].keywords, ["课间一刻钟", "一刻钟"]);
   assert.equal(read.data.config.paths.archiveRoot, join(TMP, "archive"));
-  assert.equal(read.data.config.mailbox.address, "zhjyfzcjzx3@126.com");
+  assert.equal(read.data.config.mailbox.address, "example@126.com");
 });
 
 await check("GET /api/logs 无日志时返回空数组", async () => {
