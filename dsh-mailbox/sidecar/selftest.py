@@ -61,9 +61,9 @@ def main() -> None:
     attach_dir.mkdir(parents=True, exist_ok=True)
 
     # 1) 隐私脱敏
-    masked = mask_pii("联系人：李妍，手机 13812345678，办公电话 81487550，身份证 110101199001011234")
+    masked = mask_pii("联系人：联系人A，手机 13812345678，办公电话 00000000，身份证 110101199001011234")
     check("手机号被隐去", "13812345678" not in masked and "手机号已隐去" in masked, masked)
-    check("办公座机保留", "81487550" in masked, masked)
+    check("办公座机保留", "00000000" in masked, masked)
     check("身份证被隐去", "110101199001011234" not in masked, masked)
 
     # 2) 文件名 / 目录名
@@ -85,11 +85,11 @@ def main() -> None:
     check("GBK 文件落盘", any("勾股定理" in name for name in unpacked["extracted"]), unpacked["extracted"])
 
     # 4) 学校/联系人识别
-    text = "顺义区东风小学报送：课间一刻钟案例。联系人：王芳，办公电话 81487550"
+    text = "顺义区东风小学报送：课间一刻钟案例。联系人：王芳，办公电话 00000000"
     check("学校识别", extract_school(text) == "顺义区东风小学", extract_school(text))
     contact, phone = extract_contact(text)
     check("联系人识别", contact == "王芳", contact)
-    check("座机识别", phone == "81487550", phone)
+    check("座机识别", phone == "00000000", phone)
     check("报送口径判定", naming_ok("东风小学－王芳－小学－数学－认识钟表.docx")
           and not naming_ok("附件1.docx"))
 
@@ -104,7 +104,7 @@ def main() -> None:
     }
     save_json(root / "config.json", config)
     (root / "raw" / "20261023" / "1-课间一刻钟" / "body.txt").write_text(
-        "顺义区东风小学报送课间一刻钟案例。联系人：王芳，办公电话 81487550", encoding="utf-8")
+        "顺义区东风小学报送课间一刻钟案例。联系人：王芳，办公电话 00000000", encoding="utf-8")
     record = {
         "uid": "1", "date": "2026-10-23 09:00:00",
         "from": {"name": "东风小学 王芳", "address": "wang@example.com"},
