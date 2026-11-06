@@ -8,7 +8,7 @@ export const STATE_FILE = "state.json";
 export const DEFAULT_CONFIG = {
   version: 1,
   mailbox: {
-    address: "zhjyfzcjzx3@126.com",
+    address: "example@126.com",
     imapHost: "imap.126.com",
     imapPort: 993,
     smtpHost: "smtp.126.com",
